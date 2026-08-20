@@ -48,6 +48,8 @@ class SerialLink:
         self.settings = settings
         self.retry = retry or RetrySettings()
         self._port: "serial.Serial | None" = None
+        # connect() runs on a worker thread while the GUI sends commands.
+        self._write_lock = threading.Lock()
 
     # --- state -------------------------------------------------------------
 
@@ -130,6 +132,21 @@ class SerialLink:
         """Drop any existing handle and connect again."""
         self.close()
         return self.connect(**kwargs)
+
+    # --- traffic -----------------------------------------------------------
+
+    def write(self, data: bytes) -> int:
+        """Send a command frame. Raises SerialLinkError if the port is gone."""
+        if not self.is_open:
+            raise SerialLinkError(f"{self.settings.port} is not open")
+        try:
+            with self._write_lock:
+                written = self._port.write(data)
+                self._port.flush()
+        except (OSError, ValueError) as exc:
+            raise SerialLinkError(f"write to {self.settings.port} failed: {exc}") from exc
+        log.debug("wrote %d byte(s) to %s", written, self.settings.port)
+        return written or 0
 
     def close(self) -> None:
         if self._port is not None:

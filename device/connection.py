@@ -7,12 +7,16 @@ plain Python.
 
 from __future__ import annotations
 
+import logging
 import threading
 
 from PySide6.QtCore import QObject, QThread, Signal
 
 from settings import RetrySettings, SerialSettings
+from .protocol import hex_dump
 from .serial_link import SerialLink, SerialLinkError, available_ports
+
+log = logging.getLogger(__name__)
 
 # connection states
 DISCONNECTED = "disconnected"
@@ -82,6 +86,11 @@ class ConnectionController(QObject):
     @property
     def is_connected(self) -> bool:
         return self.link.is_open
+
+    def send(self, frame: bytes) -> None:
+        """Put a command frame on the wire. Raises SerialLinkError if it can't."""
+        log.info("→ %s", hex_dump(frame))
+        self.link.write(frame)
 
     def start(self) -> None:
         """Begin connecting. Ignored if a connection or attempt already exists."""
