@@ -60,16 +60,17 @@ class ChannelBlock(QWidget):
             column.addLayout(row)
 
         if show_factory:
-            # In the GF view the factory value is the only field on the card, so
-            # it takes the calibration input's footprint; below a calibration
-            # row it stays a smaller secondary readout.
+            # In the GF view the factory value is the field being set up, so it
+            # is editable and takes the calibration input's footprint; below a
+            # calibration row it is only a small read-only reference.
             primary = not show_calibration
-            self.factory = readout(
-                "10",
-                variant="readoutSoft",
-                size=10 if primary else 9,
-                height=FIELD_HEIGHT if primary else 20,
-            )
+            if primary:
+                self.factory = field("10", size=10, max_width=FIELD_WIDTH)
+                self.factory.setFixedHeight(FIELD_HEIGHT)
+            else:
+                self.factory = readout(
+                    "10", variant="readoutSoft", size=9, height=20
+                )
             self.factory.setMaximumWidth(FIELD_WIDTH)
 
             if primary:

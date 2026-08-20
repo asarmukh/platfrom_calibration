@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
         self.sidebar.start_button.setEnabled(connected and calibrating)
         # The platform is chosen in the GF section and locked while calibrating.
         self.sidebar.platform_id.setEnabled(not calibrating)
+        self.sidebar.platform_type.setEnabled(not calibrating)
         self.workspace.pad_view.set_steppers_enabled(self._running)
 
     # --- connection --------------------------------------------------------

@@ -205,8 +205,19 @@ class SegmentedControl(QFrame):
             )
             hover = theme.BTN_HOVER
 
+        # Disabled still shows which segment is selected, only greyed down.
+        if index == self._active:
+            off_bg, off_fg = (
+                ("#5C2A22", theme.BTN_TEXT)
+                if self._role == "display"
+                else (theme.BTN_QUIET, theme.BTN_TEXT)
+            )
+        else:
+            off_bg, off_fg = theme.BTN_QUIET, theme.MUTED_SOFT
+
         return (
             f"QPushButton {{ background: {bg}; color: {fg}; border: none; "
             f"{divider} {radii} padding: {self._padding}; }}"
             f"QPushButton:hover {{ background: {hover}; }}"
+            f"QPushButton:disabled {{ background: {off_bg}; color: {off_fg}; }}"
         )

@@ -62,7 +62,7 @@ class PadView(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pad_count = 1
-        self._view = CAL
+        self._view = GF  # the factory values are set up first
         self._steppers_enabled = False
         self.pads: list[PadRow] = []
 
@@ -176,7 +176,7 @@ class PadView(QWidget):
         self.view_toggle = SegmentedControl(
             "GF",
             "CAL",
-            active=1,
+            active=0 if self._view == GF else 1,
             role="mono",
             size=9,
             tracking=0.1,
