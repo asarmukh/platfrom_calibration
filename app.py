@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Callable
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent
@@ -30,7 +31,15 @@ from device.connection import (
     ConnectionController,
     FAILED,
 )
-from device.protocol import GF_MAX, GF_MIN, ProtocolError, hex_dump, save_factory_gf
+from device.protocol import (
+    GF_MAX,
+    GF_MIN,
+    ProtocolError,
+    get_factory_gf,
+    hex_dump,
+    save_factory_gf,
+    write_factory_gf,
+)
 from device.serial_link import SerialLinkError
 from widgets.common import label
 from widgets.header_bar import HeaderBar, StatusDot
@@ -83,6 +92,8 @@ class MainWindow(QMainWindow):
         # Committing a GF field is a command to the device.
         self.workspace.pad_view.factoryChanged.connect(self._on_factory_gf)
         self.workspace.pad_view.factoryRejected.connect(self._on_factory_rejected)
+        self.sidebar.read_button.clicked.connect(self._on_read)
+        self.sidebar.write_button.clicked.connect(self._on_write)
 
         self.setCentralWidget(root)
         self._build_status_bar()
@@ -168,6 +179,40 @@ class MainWindow(QMainWindow):
             theme.ONLINE,
             f"pad {pad} ch{channel} gf={value} sent",
             hex_dump(frame),
+        )
+
+    def _on_read(self) -> None:
+        """Ask the device for its stored factory GFs."""
+        self._send_per_pad(get_factory_gf, "read")
+
+    def _on_write(self) -> None:
+        """Tell the device to keep the factory GFs it was given."""
+        self._send_per_pad(write_factory_gf, "write")
+
+    def _send_per_pad(self, build: Callable[[int, int], bytes], action: str) -> None:
+        """Send one frame per pad, as the sheet spells out for Read."""
+        platform = self._platform_id()
+        if platform is None:
+            self._show_status(theme.ACCENT, "set a platform ID first", "")
+            return
+
+        pads = len(self.workspace.pad_view.pads)
+        frames: list[bytes] = []
+        for pad in range(1, pads + 1):
+            try:
+                frame = build(platform, pad)
+                self.connection.send(frame)
+            except (ProtocolError, SerialLinkError) as exc:
+                self._show_status(
+                    theme.ACCENT, f"{action} failed on pad {pad} — {exc}", str(exc)
+                )
+                return
+            frames.append(frame)
+
+        self._show_status(
+            theme.ONLINE,
+            f"{action} sent for {pads} pad(s)",
+            "\n".join(hex_dump(frame) for frame in frames),
         )
 
     def _undo_factory(self, pad: int, channel: int) -> None:
