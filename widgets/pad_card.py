@@ -19,6 +19,11 @@ CORNER_MARK = 20  # orientation triangle in the card's top-left corner
 SIDE_COLUMN = 108  # forces column and cop column width
 FIELD_WIDTH = 96
 FIELD_MIN_WIDTH = 62  # keeps the value readable when the card is squeezed
+FIELD_HEIGHT = 24
+STEPPER_SIZE = 22  # matches common.stepper_button
+ROW_SPACING = 6  # gap between a stepper and its field
+BLOCK_HEIGHT = 67  # label + field row + factory field; keeps GF and CAL cards
+                   # the same size even though GF has one row fewer
 
 
 class ChannelBlock(QWidget):
@@ -33,6 +38,8 @@ class ChannelBlock(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.setMinimumHeight(BLOCK_HEIGHT)
+
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(4)
@@ -41,11 +48,11 @@ class ChannelBlock(QWidget):
         if show_calibration:
             row = QHBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(6)
+            row.setSpacing(ROW_SPACING)
             self.decrement = stepper_button("–")
             self.value = field("0.0", size=10, max_width=FIELD_WIDTH)
             self.value.setMinimumWidth(FIELD_MIN_WIDTH)
-            self.value.setFixedHeight(24)
+            self.value.setFixedHeight(FIELD_HEIGHT)
             self.increment = stepper_button("+")
             row.addWidget(self.decrement)
             row.addWidget(self.value, 1)
@@ -53,9 +60,35 @@ class ChannelBlock(QWidget):
             column.addLayout(row)
 
         if show_factory:
-            self.factory = readout("10", variant="readoutSoft", size=9, height=20)
+            # In the GF view the factory value is the only field on the card, so
+            # it takes the calibration input's footprint; below a calibration
+            # row it stays a smaller secondary readout.
+            primary = not show_calibration
+            self.factory = readout(
+                "10",
+                variant="readoutSoft",
+                size=10 if primary else 9,
+                height=FIELD_HEIGHT if primary else 20,
+            )
             self.factory.setMaximumWidth(FIELD_WIDTH)
-            column.addWidget(self.factory, 0, Qt.AlignmentFlag.AlignHCenter)
+
+            if primary:
+                # Reserve the stepper columns as well, so a GF card is as wide
+                # as a CAL one instead of shrinking to the bare field.
+                self.factory.setMinimumWidth(FIELD_MIN_WIDTH)
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(ROW_SPACING)
+                # The layout adds no spacing next to a spacer item, so the gap
+                # a stepper would leave has to be part of the spacer itself.
+                row.addSpacing(STEPPER_SIZE + ROW_SPACING)
+                row.addWidget(self.factory, 1)
+                row.addSpacing(STEPPER_SIZE + ROW_SPACING)
+                column.addLayout(row)
+            else:
+                column.addWidget(self.factory, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        column.addStretch(1)
 
 
 class PadCard(QWidget):
@@ -73,7 +106,6 @@ class PadCard(QWidget):
     ) -> None:
         super().__init__(parent)
         self._show_mark = show_mark
-        self.setMinimumHeight(230)
         self.setMinimumWidth(240)
         self.setMaximumWidth(520)
 
@@ -85,6 +117,10 @@ class PadCard(QWidget):
         grid.setColumnStretch(1, 105)
         grid.setColumnStretch(2, 100)
         grid.setRowStretch(1, 1)
+        # Floor for the middle row instead of a minimum height on the card: an
+        # explicit widget minimum would override the grid's own minimum and let
+        # the channel blocks be squeezed into each other.
+        grid.setRowMinimumHeight(1, 120)
 
         def block(name: str) -> ChannelBlock:
             return ChannelBlock(
@@ -105,14 +141,22 @@ class PadCard(QWidget):
             self.channels[name] = widget
             grid.addWidget(widget, row, column, Qt.AlignmentFlag.AlignTop)
 
-        centre = QVBoxLayout()
-        centre.setContentsMargins(0, 0, 0, 0)
-        centre.setSpacing(8)
+        # Wrapped in a widget rather than added as a bare layout: an aligned
+        # nested layout does not contribute its minimum height to the grid, and
+        # the two channel blocks end up drawn on top of each other.
+        centre = QWidget()
+        # Plain QWidgets pick up the app background from the style sheet, which
+        # would paint a dark block over the card.
+        centre.setObjectName("padCentre")
+        centre.setStyleSheet("QWidget#padCentre { background: transparent; }")
+        centre_column = QVBoxLayout(centre)
+        centre_column.setContentsMargins(0, 0, 0, 0)
+        centre_column.setSpacing(8)
         for name in ("ch0", "ch6"):
             widget = block(name)
             self.channels[name] = widget
-            centre.addWidget(widget)
-        grid.addLayout(centre, 1, 1, Qt.AlignmentFlag.AlignVCenter)
+            centre_column.addWidget(widget)
+        grid.addWidget(centre, 1, 1, Qt.AlignmentFlag.AlignVCenter)
 
         # With a single pad there is nothing to tell apart, so the name is only
         # worth the space in the double-platform layout.
@@ -173,6 +217,9 @@ class PadRow(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self.forces_visible = show_forces
+        self.cop_mode = cop
+
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(16)
@@ -189,6 +236,8 @@ class PadRow(QWidget):
         row.addWidget(self._cop_column(cop))
 
     def _forces_column(self, visible: bool) -> QWidget:
+        # The side columns keep their width even when empty, so pad rows stay
+        # aligned with each other whatever the view shows.
         holder = QWidget()
         holder.setFixedWidth(SIDE_COLUMN)
         column = QVBoxLayout(holder)
@@ -196,6 +245,9 @@ class PadRow(QWidget):
         column.setSpacing(12)
 
         self.forces: dict[str, object] = {}
+        if not visible:
+            return holder
+
         for name in ("Fx", "Fy", "Fz"):
             cell = QVBoxLayout()
             cell.setSpacing(4)
@@ -205,8 +257,6 @@ class PadRow(QWidget):
             self.forces[name] = value
             column.addLayout(cell)
         column.addStretch(1)
-
-        holder.setVisible(visible)
         return holder
 
     def _cop_column(self, mode: str | None) -> QWidget:
@@ -217,7 +267,6 @@ class PadRow(QWidget):
         column.setSpacing(5)
 
         if mode is None:
-            holder.setVisible(False)
             return holder
 
         total = mode == "total"

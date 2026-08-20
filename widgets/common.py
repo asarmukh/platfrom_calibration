@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
@@ -121,7 +121,12 @@ def rule(horizontal: bool = True) -> QFrame:
 
 
 class SegmentedControl(QFrame):
-    """Two-button toggle with a single shared outline, as in the design."""
+    """Two-button toggle with a single shared outline, as in the design.
+
+    Emits `changed` with the index of the newly selected segment.
+    """
+
+    changed = Signal(int)
 
     def __init__(
         self,
@@ -136,6 +141,9 @@ class SegmentedControl(QFrame):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self._role = role
+        self._padding = padding
+        self._active = active
         self.setStyleSheet(
             f"QFrame {{ border: 1px solid {theme.BORDER}; border-radius: 6px; "
             f"background: {theme.BTN_QUIET}; }}"
@@ -152,27 +160,53 @@ class SegmentedControl(QFrame):
                 QFont.Weight.DemiBold if role == "display" else QFont.Weight.Normal
             )
             btn.setFont(theme.font(role, size, weight=weight, tracking=tracking))
-            selected = index == active
-            radii = (
-                "border-top-left-radius: 5px; border-bottom-left-radius: 5px;"
-                if index == 0
-                else "border-top-right-radius: 5px; border-bottom-right-radius: 5px;"
-            )
-            divider = (
-                f"border-left: 1px solid {theme.BORDER};" if index == 1 else ""
-            )
-            if selected and role == "display":
-                bg, fg = theme.ACCENT, theme.BG
-            elif selected:
-                bg, fg = theme.FIELD, theme.TEXT_BRIGHT
-            else:
-                bg, fg = (theme.BTN, theme.BTN_TEXT) if role == "display" else (
-                    theme.BTN_QUIET,
-                    theme.MUTED,
-                )
-            btn.setStyleSheet(
-                f"QPushButton {{ background: {bg}; color: {fg}; border: none; "
-                f"{divider} {radii} padding: {padding}; }}"
-            )
+            btn.clicked.connect(lambda _=False, i=index: self.set_active(i))
             row.addWidget(btn, 1)
             self.buttons.append(btn)
+
+        self._restyle()
+
+    @property
+    def active(self) -> int:
+        return self._active
+
+    def set_active(self, index: int) -> None:
+        """Select a segment. Emits `changed` only when the selection moves."""
+        if index == self._active or not 0 <= index < len(self.buttons):
+            return
+        self._active = index
+        self._restyle()
+        self.changed.emit(index)
+
+    def _restyle(self) -> None:
+        for index, btn in enumerate(self.buttons):
+            btn.setStyleSheet(self._segment_style(index))
+
+    def _segment_style(self, index: int) -> str:
+        radii = (
+            "border-top-left-radius: 5px; border-bottom-left-radius: 5px;"
+            if index == 0
+            else "border-top-right-radius: 5px; border-bottom-right-radius: 5px;"
+        )
+        divider = f"border-left: 1px solid {theme.BORDER};" if index == 1 else ""
+
+        if index == self._active:
+            bg, fg = (
+                (theme.ACCENT, theme.BG)
+                if self._role == "display"
+                else (theme.FIELD, theme.TEXT_BRIGHT)
+            )
+            hover = bg
+        else:
+            bg, fg = (
+                (theme.BTN, theme.BTN_TEXT)
+                if self._role == "display"
+                else (theme.BTN_QUIET, theme.MUTED)
+            )
+            hover = theme.BTN_HOVER
+
+        return (
+            f"QPushButton {{ background: {bg}; color: {fg}; border: none; "
+            f"{divider} {radii} padding: {self._padding}; }}"
+            f"QPushButton:hover {{ background: {hover}; }}"
+        )

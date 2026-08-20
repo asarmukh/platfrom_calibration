@@ -71,6 +71,11 @@ class MainWindow(QMainWindow):
         body.addWidget(self.workspace, 1)
         column.addLayout(body, 1)
 
+        # SINGLE / DOUBLE drives how many pads the workspace shows.
+        self.sidebar.platform_type.changed.connect(
+            lambda index: self.workspace.set_pad_count(2 if index else 1)
+        )
+
         self.setCentralWidget(root)
         self._build_status_bar()
 
