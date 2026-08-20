@@ -26,6 +26,33 @@ Check the connection without starting the UI:
 python -m device
 ```
 
+## Building an executable
+
+```sh
+pip install -r requirements-dev.txt
+pyinstaller platform_calibration.spec
+```
+
+The result is a single `dist/PlatformCalibration.exe` (~43 MB, Qt is most of
+it) that runs without Python installed. Copy just that file wherever you need
+it.
+
+- **config.ini is not bundled.** The app writes it next to the executable on
+  first run, so the port and baud rate stay editable — that is what `paths.py`
+  is for: assets are read from the unpacked bundle, `config.ini` from the
+  executable's own folder.
+- **No console window.** Flip `console=False` to `True` in
+  `platform_calibration.spec` when you need to see the connection log while
+  debugging a port.
+- **Icon**: `logo.ico` — the arrow from `logo.svg` on the panel colour.
+- Startup takes a couple of seconds: a one-file build unpacks itself to a
+  temporary folder first. For an instant start, replace `EXE(...)` with the
+  standard `EXE(...) + COLLECT(...)` pair to get a folder build instead.
+
+Closing the window releases the serial port. Force-killing the process from
+Task Manager can leave the bootloader's child process holding it — a one-file
+build runs as two processes.
+
 ## Configuration
 
 `config.ini` at the project root holds the connection settings. It is created

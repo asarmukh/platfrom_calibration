@@ -11,8 +11,10 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Mapping, get_type_hints
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-CONFIG_PATH = PROJECT_ROOT / "config.ini"
+from paths import app_dir
+
+# Next to the executable in a build, so edits survive a restart.
+CONFIG_PATH = app_dir() / "config.ini"
 
 HEADER = """\
 ; Platform Calibration settings.
