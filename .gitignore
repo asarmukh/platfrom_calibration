@@ -1,0 +1,96 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+bin/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Secrets and local configurations
+.env
+.env.local
+.env.*.local
+*.secret
+
+# Testing and coverage
+htmlcov/
+.tosca/
+.pytest_cache/
+.pytest/
+.cache/
+.coverage
+.coverage.*
+.hypothesis/
+.noftests/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# IDEs and Text Editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
+
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Logs and debug
+*.log
+npm-debug.log*
+yarn-*
+lerna-debug.log*
+
+# Build/Coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Environment/Secrets
+.env
+.env.local
+.env.*
+
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
