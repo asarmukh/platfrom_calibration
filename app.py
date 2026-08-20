@@ -33,7 +33,7 @@ from device.connection import (
 from widgets.common import label
 from widgets.header_bar import HeaderBar, StatusDot
 from widgets.sidebar import Sidebar
-from widgets.workspace import Workspace
+from widgets.workspace import CAL, Workspace
 
 WINDOW_TITLE = "Platform Calibration"
 DEFAULT_SIZE = (1280, 800)
@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
     def __init__(self, config: AppConfig, startup_error: str = "") -> None:
         super().__init__()
         self.config = config
+        self._running = False  # latched by the Start button
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*DEFAULT_SIZE)
         self.setMinimumSize(*MINIMUM_SIZE)
@@ -75,12 +76,16 @@ class MainWindow(QMainWindow):
         self.sidebar.platform_type.changed.connect(
             lambda index: self.workspace.set_pad_count(2 if index else 1)
         )
+        self.workspace.pad_view.viewChanged.connect(self._on_view_changed)
+        self.sidebar.start_button.toggled.connect(self._on_start_toggled)
 
         self.setCentralWidget(root)
         self._build_status_bar()
 
         self.connection = ConnectionController(config.serial, config.retry, self)
         self.connection.stateChanged.connect(self._on_connection_state)
+
+        self._apply_controls()
 
         if startup_error:
             self._show_status(theme.ACCENT, startup_error)
@@ -128,11 +133,40 @@ class MainWindow(QMainWindow):
         else:
             self.connection.start()
 
+    # --- control availability ----------------------------------------------
+
+    def _on_view_changed(self, view: str) -> None:
+        # Start belongs to the CAL section, so leaving it ends the run rather
+        # than stranding a latched button the user can no longer press.
+        if view != CAL and self._running:
+            self.sidebar.start_button.setChecked(False)
+        self._apply_controls()
+
+    def _on_start_toggled(self, running: bool) -> None:
+        self._running = running
+        self.sidebar.start_button.setText("STOP" if running else "START")
+        self._apply_controls()
+
+    def _apply_controls(self) -> None:
+        """Enable the controls that make sense for the current state."""
+        connected = self.connection.state == CONNECTED
+        calibrating = self.workspace.pad_view.view == CAL
+
+        # Read/Write talk to the device, so they are out while a run is on.
+        self.sidebar.read_button.setEnabled(connected and not self._running)
+        self.sidebar.write_button.setEnabled(connected and not self._running)
+        self.sidebar.start_button.setEnabled(connected and calibrating)
+        # The platform is chosen in the GF section and locked while calibrating.
+        self.sidebar.platform_id.setEnabled(not calibrating)
+        self.workspace.pad_view.set_steppers_enabled(self._running)
+
     # --- connection --------------------------------------------------------
 
     def _on_connection_state(self, state: str, message: str) -> None:
         self._show_status(STATE_COLORS.get(state, theme.MUTED_DIM), message)
-        self.sidebar.set_connected(state == CONNECTED)
+        if state != CONNECTED and self._running:
+            self.sidebar.start_button.setChecked(False)  # drops _running too
+        self._apply_controls()
 
         if state == CONNECTING:
             self.status_action.setText("CANCEL")

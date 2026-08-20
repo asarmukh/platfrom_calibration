@@ -18,12 +18,13 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 import theme
+from paths import bundle_dir
+
 from .common import label, rule
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-LOGO_SVG = PROJECT_ROOT / "logo.svg"
-LOGO_RASTER = PROJECT_ROOT / "logo.jpeg"
-LOGO_HEIGHT = 24
+LOGO_SVG = bundle_dir() / "logo.svg"
+LOGO_RASTER = bundle_dir() / "logo.jpeg"
+LOGO_HEIGHT = 24  # sized so the mark reads level with the product title
 
 # Alpha keying thresholds for the raster fallback: how far a pixel must differ
 # from the background colour to count as artwork. The band between them keeps
@@ -111,6 +112,7 @@ class StatusDot(QWidget):
         super().__init__(parent)
         self._color = color
         self.setFixedSize(7, 7)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def set_color(self, color: str) -> None:
         self._color = color
@@ -138,6 +140,9 @@ class HeaderBar(QFrame):
         row.setSpacing(16)
 
         self.logo = QLabel()
+        # Without this the label paints the app background over the header,
+        # leaving a slightly darker box around the mark.
+        self.logo.setStyleSheet("background: transparent;")
         logo = load_logo()
         if logo is not None:
             self.logo.setPixmap(logo)

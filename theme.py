@@ -108,6 +108,11 @@ QLineEdit {{
 QLineEdit:focus {{
     border: 1px solid {ACCENT};
 }}
+QLineEdit:disabled {{
+    background: {BTN_QUIET};
+    border: 1px solid {BORDER};
+    color: {MUTED_SOFT};
+}}
 
 /* read-only figures */
 QLineEdit#readout {{
@@ -153,6 +158,14 @@ QPushButton#actionPrimary {{
 QPushButton#actionPrimary:hover {{
     background: {BTN_HOVER};
 }}
+QPushButton#actionPrimary:checked {{
+    background: {ACCENT};
+    border: 1px solid {ACCENT};
+    color: {BG};
+}}
+QPushButton#actionPrimary:checked:hover {{
+    background: #F0563F;
+}}
 QPushButton#actionPrimary:disabled {{
     background: {BTN_QUIET};
     border: 1px solid #5C2A22;
@@ -178,6 +191,10 @@ QPushButton#stepper {{
 }}
 QPushButton#stepper:hover {{
     background: {STEPPER_HOVER};
+}}
+QPushButton#stepper:disabled {{
+    background: {FIELD_READONLY};
+    color: {MUTED_SOFT};
 }}
 
 QStatusBar {{

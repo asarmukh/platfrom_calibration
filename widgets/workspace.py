@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -57,10 +57,13 @@ class Placeholder(QWidget):
 class PadView(QWidget):
     """Section heading, view toggle and the pad rows themselves."""
 
+    viewChanged = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._pad_count = 1
         self._view = CAL
+        self._steppers_enabled = False
         self.pads: list[PadRow] = []
 
         column = QVBoxLayout(self)
@@ -90,14 +93,27 @@ class PadView(QWidget):
             self._rebuild()
 
     def set_view(self, view: str) -> None:
-        if view != self._view:
-            self._view = view
-            self.view_toggle.set_active(0 if view == GF else 1)
-            self._rebuild()
+        # The toggle is the single source of truth; it calls back into
+        # _on_view_changed, and does nothing if the view is already current.
+        self.view_toggle.set_active(0 if view == GF else 1)
+
+    def set_steppers_enabled(self, enabled: bool) -> None:
+        """+/- are only usable while a run is active."""
+        self._steppers_enabled = enabled
+        self._apply_stepper_state()
 
     def _on_view_changed(self, index: int) -> None:
         self._view = GF if index == 0 else CAL
         self._rebuild()
+        self.viewChanged.emit(self._view)
+
+    def _apply_stepper_state(self) -> None:
+        for pad in self.pads:
+            for block in pad.card.channels.values():
+                for name in ("decrement", "increment"):
+                    button = getattr(block, name, None)
+                    if button is not None:
+                        button.setEnabled(self._steppers_enabled)
 
     # --- construction ------------------------------------------------------
 
@@ -135,6 +151,8 @@ class PadView(QWidget):
             )
             self.pads.append(pad)
             self.pad_area.addWidget(pad)
+
+        self._apply_stepper_state()  # the rows were just recreated
 
     def _heading(self) -> QWidget:
         # Title and toggle share one cell so the title stays optically centred

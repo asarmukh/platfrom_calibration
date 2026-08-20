@@ -67,22 +67,16 @@ class SidebarPanel(QFrame):
         box.setSpacing(10)
         self.read_button = action_button("Read")
         self.write_button = action_button("Write")
+        # Start latches: pressing it again stops the run.
         self.start_button = action_button("Start", variant="actionPrimary")
-        self.stop_button = action_button("Stop", variant="actionQuiet")
-        # Stop is a local reset in the design, so it stays available; the rest
-        # need an open port.
-        self.device_buttons = (self.read_button, self.write_button, self.start_button)
-        for btn in (*self.device_buttons, self.stop_button):
-            btn.setFixedHeight(ACTION_HEIGHT)
-            box.addWidget(btn)
-        for btn in self.device_buttons:
-            btn.setEnabled(False)  # until the device is connected
-        return box
+        self.start_button.setCheckable(True)
 
-    def set_connected(self, connected: bool) -> None:
-        """Device actions are only usable once the port is open."""
+        self.device_buttons = (self.read_button, self.write_button, self.start_button)
         for btn in self.device_buttons:
-            btn.setEnabled(connected)
+            btn.setFixedHeight(ACTION_HEIGHT)
+            btn.setEnabled(False)  # until the device is connected
+            box.addWidget(btn)
+        return box
 
     def _totals(self) -> QVBoxLayout:
         box = QVBoxLayout()
