@@ -18,10 +18,18 @@ from .common import SegmentedControl, label
 from .pad_card import PadRow
 
 CONTENT_MAX_WIDTH = 1000
-PAD_COUNT = 1  # single platform; the double layout adds a second pad row
 
 EMPTY = 0
 PADS = 1
+
+# views
+GF = "gf"
+CAL = "cal"
+
+SECTION_TITLES = {
+    CAL: "CALIBRATION FACTOR SETUP",
+    GF: "FACTORY GF SETUP",
+}
 
 
 class Placeholder(QWidget):
@@ -51,26 +59,82 @@ class PadView(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._pad_count = 1
+        self._view = CAL
+        self.pads: list[PadRow] = []
+
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(16)
         column.addWidget(self._heading())
 
-        # Pad names are only shown when there is more than one pad to tell apart.
-        self.pads = [
-            PadRow(
-                f"Pad {index + 1}",
-                show_mark=index == 0,
-                show_title=PAD_COUNT > 1,
-                show_forces=False,
-                cop="pad",
-            )
-            for index in range(PAD_COUNT)
-        ]
-        for pad in self.pads:
-            column.addWidget(pad)
-
+        self.pad_area = QVBoxLayout()
+        self.pad_area.setContentsMargins(0, 0, 0, 0)
+        self.pad_area.setSpacing(16)
+        column.addLayout(self.pad_area)
         column.addStretch(1)
+
+        self._rebuild()
+
+    # --- state -------------------------------------------------------------
+
+    @property
+    def view(self) -> str:
+        return self._view
+
+    def set_pad_count(self, count: int) -> None:
+        """1 for a single platform, 2 for a double one."""
+        count = max(1, count)
+        if count != self._pad_count:
+            self._pad_count = count
+            self._rebuild()
+
+    def set_view(self, view: str) -> None:
+        if view != self._view:
+            self._view = view
+            self.view_toggle.set_active(0 if view == GF else 1)
+            self._rebuild()
+
+    def _on_view_changed(self, index: int) -> None:
+        self._view = GF if index == 0 else CAL
+        self._rebuild()
+
+    # --- construction ------------------------------------------------------
+
+    def _rebuild(self) -> None:
+        """Recreate the pad rows for the current platform type and view."""
+        while self.pad_area.count():
+            item = self.pad_area.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        calibrating = self._view == CAL
+        double = self._pad_count > 1
+        self.title.setText(SECTION_TITLES[self._view])
+
+        self.pads = []
+        for index in range(self._pad_count):
+            first = index == 0
+            # A single platform gets its own cop plot; a double one shows the
+            # combined plot once, beside the first pad.
+            if not calibrating:
+                cop = None
+            elif double:
+                cop = "total" if first else None
+            else:
+                cop = "pad"
+
+            pad = PadRow(
+                f"Pad {index + 1}",
+                show_mark=first,
+                show_title=double,  # names only matter when there are two
+                show_forces=double and calibrating,
+                show_calibration=calibrating,
+                cop=cop,
+            )
+            self.pads.append(pad)
+            self.pad_area.addWidget(pad)
 
     def _heading(self) -> QWidget:
         # Title and toggle share one cell so the title stays optically centred
@@ -81,7 +145,7 @@ class PadView(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
 
         self.title = label(
-            "CALIBRATION FACTOR SETUP",
+            SECTION_TITLES[self._view],
             role="display",
             size=15,
             color=theme.ACCENT,
@@ -100,6 +164,7 @@ class PadView(QWidget):
             tracking=0.1,
             padding="8px 16px",
         )
+        self.view_toggle.changed.connect(self._on_view_changed)
         grid.addWidget(
             self.view_toggle,
             0,
@@ -131,6 +196,7 @@ class Workspace(QScrollArea):
         self.stack.addWidget(self.pad_view)  # index PADS
         self.stack.setCurrentIndex(PADS)
         inner.addWidget(self.stack)
+        self.set_pad_count = self.pad_view.set_pad_count
 
         outer.addWidget(centred, 0, Qt.AlignmentFlag.AlignHCenter)
         self.setWidget(page)
