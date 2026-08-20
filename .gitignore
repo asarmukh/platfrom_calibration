@@ -94,3 +94,7 @@ coverage/
 .DS_Store
 .idea/
 .vscode/
+
+# Local reference documents (protocol sheets etc.)
+*.ods
+*.xlsx

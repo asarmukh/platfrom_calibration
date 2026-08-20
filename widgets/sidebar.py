@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -59,6 +60,8 @@ class SidebarPanel(QFrame):
         box.addWidget(caption("Platform ID"))
         self.platform_id = field(placeholder="—", size=11)
         self.platform_id.setFixedHeight(38)
+        # It travels as one byte of every command frame.
+        self.platform_id.setValidator(QIntValidator(0, 255, self.platform_id))
         box.addWidget(self.platform_id)
         return box
 

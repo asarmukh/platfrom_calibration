@@ -12,8 +12,11 @@ from PySide6.QtWidgets import (
 )
 
 import theme
-from .common import field, label, mono, readout, stepper_button
+from device.protocol import GF_MAX, GF_MIN
+from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot
+
+GF_DEFAULT = 10  # what an untouched channel shows before a read
 
 CORNER_MARK = 20  # orientation triangle in the card's top-left corner
 SIDE_COLUMN = 108  # forces column and cop column width
@@ -65,11 +68,19 @@ class ChannelBlock(QWidget):
             # calibration row it is only a small read-only reference.
             primary = not show_calibration
             if primary:
-                self.factory = field("10", size=10, max_width=FIELD_WIDTH)
+                # Committing this field is what sends CMD_PADS_SAVE_FACTORY_GF,
+                # so it accepts only values the protocol allows.
+                self.factory = NumericField(
+                    GF_DEFAULT,
+                    minimum=GF_MIN,
+                    maximum=GF_MAX,
+                    size=10,
+                    max_width=FIELD_WIDTH,
+                )
                 self.factory.setFixedHeight(FIELD_HEIGHT)
             else:
                 self.factory = readout(
-                    "10", variant="readoutSoft", size=9, height=20
+                    str(GF_DEFAULT), variant="readoutSoft", size=9, height=20
                 )
             self.factory.setMaximumWidth(FIELD_WIDTH)
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIntValidator
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -70,6 +70,84 @@ def field(
     if max_width is not None:
         edit.setMaximumWidth(max_width)
     return edit
+
+
+class NumericField(QLineEdit):
+    """Integer field that commits on Enter and on losing focus.
+
+    `committed` carries the new value, and only when it actually changed —
+    re-entering the same number is not a new command. Anything unparsable or
+    out of range is put back to the last accepted value and reported through
+    `rejected`, so the field never holds a value the device was not told about.
+    """
+
+    committed = Signal(int)
+    rejected = Signal(str)
+
+    def __init__(
+        self,
+        value: int,
+        *,
+        minimum: int,
+        maximum: int,
+        size: int = 10,
+        max_width: int | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(str(value), parent)
+        self._minimum = minimum
+        self._maximum = maximum
+        self._accepted = value
+        self._previous = value
+        self.setFont(theme.font("mono", size))
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setValidator(QIntValidator(minimum, maximum, self))
+        if max_width is not None:
+            self.setMaximumWidth(max_width)
+        self.returnPressed.connect(self._commit)
+
+    @property
+    def value(self) -> int:
+        """The last accepted value."""
+        return self._accepted
+
+    def set_value(self, value: int) -> None:
+        """Show a value without treating it as user input (e.g. after a read)."""
+        self._accepted = self._previous = value
+        self.setText(str(value))
+
+    def rollback(self) -> None:
+        """Undo the last commit while keeping the typed text.
+
+        Used when the command could not be sent: the number stays on screen for
+        the user to try again, but the field no longer counts it as delivered,
+        so re-entering it is a change once more.
+        """
+        self._accepted = self._previous
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        # editingFinished stays silent while the text is only "intermediate"
+        # for the validator, so moving to the next field is handled here.
+        super().focusOutEvent(event)
+        self._commit()
+
+    def _commit(self) -> None:
+        text = self.text().strip()
+        try:
+            value = int(text)
+        except ValueError:
+            value = None
+
+        if value is None or not self._minimum <= value <= self._maximum:
+            self.setText(str(self._accepted))
+            self.rejected.emit(text)
+            return
+
+        if value == self._accepted:
+            return
+        self._previous = self._accepted
+        self._accepted = value
+        self.committed.emit(value)
 
 
 def readout(

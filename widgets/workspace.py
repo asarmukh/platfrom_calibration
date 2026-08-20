@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 import theme
-from .common import SegmentedControl, label
+from .common import NumericField, SegmentedControl, label
 from .pad_card import PadRow
 
 CONTENT_MAX_WIDTH = 1000
@@ -58,6 +58,10 @@ class PadView(QWidget):
     """Section heading, view toggle and the pad rows themselves."""
 
     viewChanged = Signal(str)
+    # A GF field was committed: pad number (1-based), channel number, value.
+    factoryChanged = Signal(int, int, int)
+    # Text that could not be accepted as a GF value.
+    factoryRejected = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -151,8 +155,30 @@ class PadView(QWidget):
             )
             self.pads.append(pad)
             self.pad_area.addWidget(pad)
+            self._connect_factory_fields(pad, index + 1)
 
         self._apply_stepper_state()  # the rows were just recreated
+
+    def factory_field(self, pad_id: int, channel: int) -> NumericField | None:
+        """The editable GF field of one channel, or None if this view has none."""
+        index = pad_id - 1
+        if not 0 <= index < len(self.pads):
+            return None
+        block = self.pads[index].card.channels.get(f"ch{channel}")
+        editor = getattr(block, "factory", None)
+        return editor if isinstance(editor, NumericField) else None
+
+    def _connect_factory_fields(self, pad: PadRow, pad_id: int) -> None:
+        """Relay each editable GF field as (pad, channel, value)."""
+        for name, block in pad.card.channels.items():
+            editor = getattr(block, "factory", None)
+            if not isinstance(editor, NumericField):
+                continue  # read-only reference under a calibration row
+            channel = int(name.removeprefix("ch"))
+            editor.committed.connect(
+                lambda value, p=pad_id, c=channel: self.factoryChanged.emit(p, c, value)
+            )
+            editor.rejected.connect(self.factoryRejected)
 
     def _heading(self) -> QWidget:
         # Title and toggle share one cell so the title stays optically centred

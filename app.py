@@ -30,6 +30,8 @@ from device.connection import (
     ConnectionController,
     FAILED,
 )
+from device.protocol import GF_MAX, GF_MIN, ProtocolError, hex_dump, save_factory_gf
+from device.serial_link import SerialLinkError
 from widgets.common import label
 from widgets.header_bar import HeaderBar, StatusDot
 from widgets.sidebar import Sidebar
@@ -78,6 +80,9 @@ class MainWindow(QMainWindow):
         )
         self.workspace.pad_view.viewChanged.connect(self._on_view_changed)
         self.sidebar.start_button.toggled.connect(self._on_start_toggled)
+        # Committing a GF field is a command to the device.
+        self.workspace.pad_view.factoryChanged.connect(self._on_factory_gf)
+        self.workspace.pad_view.factoryRejected.connect(self._on_factory_rejected)
 
         self.setCentralWidget(root)
         self._build_status_bar()
@@ -121,17 +126,61 @@ class MainWindow(QMainWindow):
         self.status_action.hide()
         bar.addPermanentWidget(self.status_action)
 
-    def _show_status(self, color: str, message: str) -> None:
+    def _show_status(self, color: str, message: str, detail: str | None = None) -> None:
         self.status_dot.set_color(color)
         self.status_label.setText(message)
         # The driver's full complaint is too long for the bar; keep it reachable.
-        self.status_label.setToolTip(self.connection.last_error)
+        self.status_label.setToolTip(
+            self.connection.last_error if detail is None else detail
+        )
 
     def _on_status_action(self) -> None:
         if self.connection.state == CONNECTING:
             self.connection.cancel()
         else:
             self.connection.start()
+
+    # --- commands ----------------------------------------------------------
+
+    def _platform_id(self) -> int | None:
+        """The sidebar's platform ID as a frame byte, or None if unusable."""
+        try:
+            value = int(self.sidebar.platform_id.text().strip())
+        except ValueError:
+            return None
+        return value if 0 <= value <= 0xFF else None
+
+    def _on_factory_gf(self, pad: int, channel: int, value: int) -> None:
+        """A GF field was committed — store that channel on the device."""
+        platform = self._platform_id()
+        if platform is None:
+            self._undo_factory(pad, channel)
+            self._show_status(theme.ACCENT, "set a platform ID first", "")
+            return
+        try:
+            frame = save_factory_gf(platform, pad, channel, value)
+            self.connection.send(frame)
+        except (ProtocolError, SerialLinkError) as exc:
+            self._undo_factory(pad, channel)
+            self._show_status(theme.ACCENT, f"gf not sent — {exc}", str(exc))
+            return
+        self._show_status(
+            theme.ONLINE,
+            f"pad {pad} ch{channel} gf={value} sent",
+            hex_dump(frame),
+        )
+
+    def _undo_factory(self, pad: int, channel: int) -> None:
+        """Nothing reached the device, so the field must not count as delivered."""
+        editor = self.workspace.pad_view.factory_field(pad, channel)
+        if editor is not None:
+            editor.rollback()
+
+    def _on_factory_rejected(self, text: str) -> None:
+        what = f"'{text}'" if text else "an empty field"
+        self._show_status(
+            theme.ACCENT, f"gf must be {GF_MIN}–{GF_MAX}, {what} ignored", ""
+        )
 
     # --- control availability ----------------------------------------------
 
