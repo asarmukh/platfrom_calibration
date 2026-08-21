@@ -24,6 +24,12 @@ CMD_PADS_SAVE_FACTORY_GF = 0x53
 GF_MIN = 10
 GF_MAX = 200
 
+# A Read answer carries one gain factor per channel, behind its own header:
+#     be ef | platform ID | pad ID | CF[8] | CRC_LOW CRC_HIGH | 04 04
+RESPONSE_HEADER = b"\xbe\xef"
+CF_COUNT = 8
+RESPONSE_SIZE = 2 + 2 + CF_COUNT + 2 + 2
+
 
 class ProtocolError(ValueError):
     """A field does not fit the frame."""
@@ -81,6 +87,45 @@ def get_factory_gf(platform_id: int, pad_id: int) -> bytes:
 def write_factory_gf(platform_id: int, pad_id: int) -> bytes:
     """"Write": commit the factory GFs held by the device."""
     return build_frame(platform_id, pad_id, CMD_PADS_SAVE_FACTORY_GF)
+
+
+def parse_read_response(frame: bytes) -> tuple[int, int, list[int]]:
+    """Split a Read answer into platform ID, pad ID and its CF[8]."""
+    if len(frame) != RESPONSE_SIZE:
+        raise ProtocolError(f"expected {RESPONSE_SIZE} bytes, got {len(frame)}")
+    if not frame.startswith(RESPONSE_HEADER) or not frame.endswith(EOT):
+        raise ProtocolError(f"not a response frame: {hex_dump(frame)}")
+    body = frame[2 : 4 + CF_COUNT]  # platform ID .. CF[7], what the CRC covers
+    sent = frame[4 + CF_COUNT] | frame[5 + CF_COUNT] << 8
+    expected = crc16(body)
+    if sent != expected:
+        raise ProtocolError(f"CRC {sent:#06x}, expected {expected:#06x}")
+    return body[0], body[1], list(body[2:])
+
+
+def take_responses(buffer: bytearray) -> list[bytes]:
+    """Pull whole response frames out of a byte stream, in order.
+
+    Anything before a header, and any header not followed by a complete frame
+    with the right terminator, is dropped; a partial tail stays in `buffer` for
+    the next read.
+    """
+    frames: list[bytes] = []
+    while True:
+        start = buffer.find(RESPONSE_HEADER)
+        if start < 0:
+            # A lone be at the end may still be the start of a header.
+            del buffer[: max(0, len(buffer) - 1)]
+            return frames
+        del buffer[:start]
+        if len(buffer) < RESPONSE_SIZE:
+            return frames
+        frame = bytes(buffer[:RESPONSE_SIZE])
+        if frame.endswith(EOT):
+            del buffer[:RESPONSE_SIZE]
+            frames.append(frame)
+        else:
+            del buffer[:2]  # false header, look for the next one
 
 
 def hex_dump(frame: bytes) -> str:

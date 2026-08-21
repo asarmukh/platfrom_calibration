@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from typing import Callable
 
 from PySide6.QtCore import QTimer, Qt
@@ -37,6 +38,7 @@ from device.protocol import (
     ProtocolError,
     get_factory_gf,
     hex_dump,
+    parse_read_response,
     save_factory_gf,
     write_factory_gf,
 )
@@ -46,9 +48,12 @@ from widgets.header_bar import HeaderBar, StatusDot
 from widgets.sidebar import Sidebar
 from widgets.workspace import CAL, Workspace
 
+log = logging.getLogger(__name__)
+
 WINDOW_TITLE = "Platform Calibration"
 DEFAULT_SIZE = (1280, 800)
 MINIMUM_SIZE = (1024, 680)
+PAD_GAP = 0.2  # seconds between per-pad command frames
 
 STATE_COLORS = {
     CONNECTED: theme.ONLINE,
@@ -100,6 +105,7 @@ class MainWindow(QMainWindow):
 
         self.connection = ConnectionController(config.serial, config.retry, self)
         self.connection.stateChanged.connect(self._on_connection_state)
+        self.connection.frameReceived.connect(self._on_frame)
 
         self._apply_controls()
 
@@ -199,6 +205,11 @@ class MainWindow(QMainWindow):
         pads = len(self.workspace.pad_view.pads)
         frames: list[bytes] = []
         for pad in range(1, pads + 1):
+            if pad > 1:
+                # The device needs a breather between per-pad frames.
+                # ponytail: blocks the GUI for PAD_GAP; move to a QTimer chain
+                # if the gap ever grows past a blink.
+                time.sleep(PAD_GAP)
             try:
                 frame = build(platform, pad)
                 self.connection.send(frame)
@@ -213,6 +224,32 @@ class MainWindow(QMainWindow):
             theme.ONLINE,
             f"{action} sent for {pads} pad(s)",
             "\n".join(hex_dump(frame) for frame in frames),
+        )
+
+    def _on_frame(self, frame: bytes) -> None:
+        """An answer arrived — show its gain factors on the pad it belongs to."""
+        try:
+            platform, pad, factors = parse_read_response(frame)
+        except ProtocolError as exc:
+            log.warning("bad answer %s — %s", hex_dump(frame), exc)
+            self._show_status(theme.ACCENT, f"bad answer — {exc}", hex_dump(frame))
+            return
+
+        expected = self._platform_id()
+        if expected is not None and platform != expected:
+            log.info("ignoring answer from platform %d (expected %d)", platform, expected)
+            return
+
+        # CF[i] belongs to ch<i>; the card only shows some of the eight.
+        log.info(
+            "platform %d pad %d gf %s",
+            platform,
+            pad,
+            ", ".join(f"ch{ch}={value}" for ch, value in enumerate(factors)),
+        )
+        self.workspace.pad_view.set_factors(pad, dict(enumerate(factors)))
+        self._show_status(
+            theme.ONLINE, f"pad {pad} gf read", hex_dump(frame)
         )
 
     def _undo_factory(self, pad: int, channel: int) -> None:

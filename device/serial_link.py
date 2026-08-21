@@ -148,6 +148,18 @@ class SerialLink:
         log.debug("wrote %d byte(s) to %s", written, self.settings.port)
         return written or 0
 
+    def read_available(self) -> bytes:
+        """Whatever the device has sent, waiting up to the port's read timeout."""
+        if not self.is_open:
+            raise SerialLinkError(f"{self.settings.port} is not open")
+        try:
+            chunk = self._port.read(1)  # blocks until data or timeout
+            if chunk and self._port.in_waiting:
+                chunk += self._port.read(self._port.in_waiting)
+        except (OSError, ValueError) as exc:
+            raise SerialLinkError(f"read from {self.settings.port} failed: {exc}") from exc
+        return chunk
+
     def close(self) -> None:
         if self._port is not None:
             try:
