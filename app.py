@@ -47,6 +47,7 @@ from device.protocol import (
 from device.serial_link import SerialLinkError
 from widgets.common import label
 from widgets.header_bar import HeaderBar, StatusDot
+from widgets.pad_card import CAL_MAX, CAL_MIN
 from widgets.sidebar import Sidebar
 from widgets.workspace import CAL, Workspace
 
@@ -100,6 +101,7 @@ class MainWindow(QMainWindow):
         # Committing a GF field is a command to the device.
         self.workspace.pad_view.factoryChanged.connect(self._on_factory_gf)
         self.workspace.pad_view.factoryRejected.connect(self._on_factory_rejected)
+        self.workspace.pad_view.calibrationLimit.connect(self._on_calibration_limit)
         self.sidebar.read_button.clicked.connect(self._on_read)
         self.sidebar.write_button.clicked.connect(self._on_write)
 
@@ -276,6 +278,15 @@ class MainWindow(QMainWindow):
         editor = self.workspace.pad_view.factory_field(pad, channel)
         if editor is not None:
             editor.rollback()
+
+    def _on_calibration_limit(self, pad: int, channel: int, limit: int) -> None:
+        edge = "lowest" if limit == CAL_MIN else "highest"
+        self._show_status(
+            theme.ACCENT,
+            f"pad {pad} ch{channel} is at its {edge} calibration factor "
+            f"({CAL_MIN}–{CAL_MAX})",
+            "",
+        )
 
     def _on_factory_rejected(self, text: str) -> None:
         what = f"'{text}'" if text else "an empty field"
