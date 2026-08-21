@@ -17,6 +17,7 @@ from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot
 
 GF_DEFAULT = 10  # what an untouched channel shows before a read
+CAL_DEFAULT = "0.0"  # calibration factor before the steppers touch it
 
 CORNER_MARK = 20  # orientation triangle in the card's top-left corner
 SIDE_COLUMN = 108  # forces column and cop column width
@@ -30,14 +31,13 @@ BLOCK_HEIGHT = 67  # label + field row + factory field; keeps GF and CAL cards
 
 
 class ChannelBlock(QWidget):
-    """One channel: name, calibration stepper row, factory GF readout."""
+    """One channel: name, and either its calibration row or its factory GF."""
 
     def __init__(
         self,
         name: str,
         *,
         show_calibration: bool = True,
-        show_factory: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -62,43 +62,38 @@ class ChannelBlock(QWidget):
             row.addWidget(self.increment)
             column.addLayout(row)
 
-        if show_factory:
-            # In the GF view the factory value is the field being set up, so it
-            # is editable and takes the calibration input's footprint; below a
-            # calibration row it is only a small read-only reference.
-            primary = not show_calibration
-            if primary:
-                # Committing this field is what sends CMD_PADS_SAVE_FACTORY_GF,
-                # so it accepts only values the protocol allows.
-                self.factory = NumericField(
-                    GF_DEFAULT,
-                    minimum=GF_MIN,
-                    maximum=GF_MAX,
-                    size=10,
-                    max_width=FIELD_WIDTH,
-                )
-                self.factory.setFixedHeight(FIELD_HEIGHT)
-            else:
-                self.factory = readout(
-                    str(GF_DEFAULT), variant="readoutSoft", size=9, height=20
-                )
+            # The factor the steppers are working on, under its own channel.
+            self.calibration = readout(
+                CAL_DEFAULT, variant="readoutSoft", size=9, height=20
+            )
+            self.calibration.setMaximumWidth(FIELD_WIDTH)
+            column.addWidget(self.calibration, 0, Qt.AlignmentFlag.AlignHCenter)
+        else:
+            # In the GF view the factory gain factor is the field being set up,
+            # so it is editable and takes the calibration input's footprint.
+            # Committing it is what sends CMD_PADS_SAVE_FACTORY_GF, so it
+            # accepts only values the protocol allows.
+            self.factory = NumericField(
+                GF_DEFAULT,
+                minimum=GF_MIN,
+                maximum=GF_MAX,
+                size=10,
+                max_width=FIELD_WIDTH,
+            )
+            self.factory.setFixedHeight(FIELD_HEIGHT)
             self.factory.setMaximumWidth(FIELD_WIDTH)
-
-            if primary:
-                # Reserve the stepper columns as well, so a GF card is as wide
-                # as a CAL one instead of shrinking to the bare field.
-                self.factory.setMinimumWidth(FIELD_MIN_WIDTH)
-                row = QHBoxLayout()
-                row.setContentsMargins(0, 0, 0, 0)
-                row.setSpacing(ROW_SPACING)
-                # The layout adds no spacing next to a spacer item, so the gap
-                # a stepper would leave has to be part of the spacer itself.
-                row.addSpacing(STEPPER_SIZE + ROW_SPACING)
-                row.addWidget(self.factory, 1)
-                row.addSpacing(STEPPER_SIZE + ROW_SPACING)
-                column.addLayout(row)
-            else:
-                column.addWidget(self.factory, 0, Qt.AlignmentFlag.AlignHCenter)
+            # Reserve the stepper columns as well, so a GF card is as wide as a
+            # CAL one instead of shrinking to the bare field.
+            self.factory.setMinimumWidth(FIELD_MIN_WIDTH)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(ROW_SPACING)
+            # The layout adds no spacing next to a spacer item, so the gap a
+            # stepper would leave has to be part of the spacer itself.
+            row.addSpacing(STEPPER_SIZE + ROW_SPACING)
+            row.addWidget(self.factory, 1)
+            row.addSpacing(STEPPER_SIZE + ROW_SPACING)
+            column.addLayout(row)
 
         column.addStretch(1)
 
@@ -113,7 +108,6 @@ class PadCard(QWidget):
         show_mark: bool = True,
         show_title: bool = True,
         show_calibration: bool = True,
-        show_factory: bool = True,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -138,7 +132,6 @@ class PadCard(QWidget):
             return ChannelBlock(
                 name,
                 show_calibration=show_calibration,
-                show_factory=show_factory,
             )
 
         self.channels: dict[str, ChannelBlock] = {}
@@ -224,7 +217,6 @@ class PadRow(QWidget):
         show_title: bool = True,
         show_forces: bool = False,
         show_calibration: bool = True,
-        show_factory: bool = True,
         cop: str | None = "pad",
         parent: QWidget | None = None,
     ) -> None:
@@ -242,7 +234,6 @@ class PadRow(QWidget):
             show_mark=show_mark,
             show_title=show_title,
             show_calibration=show_calibration,
-            show_factory=show_factory,
         )
         row.addWidget(self.card, 1)
         row.addWidget(self._cop_column(cop))

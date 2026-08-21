@@ -68,6 +68,9 @@ class PadView(QWidget):
         self._pad_count = 1
         self._view = GF  # the factory values are set up first
         self._steppers_enabled = False
+        # (pad, channel) -> gain factor, kept here because switching view
+        # recreates the widgets that show it.
+        self._factors: dict[tuple[int, int], int] = {}
         self.pads: list[PadRow] = []
 
         column = QVBoxLayout(self)
@@ -158,6 +161,21 @@ class PadView(QWidget):
             self._connect_factory_fields(pad, index + 1)
 
         self._apply_stepper_state()  # the rows were just recreated
+        self._apply_factors()
+
+    def set_factors(self, pad_id: int, values: dict[int, int]) -> None:
+        """Show the gain factors a pad reported, by channel number."""
+        for channel, value in values.items():
+            self._factors[(pad_id, channel)] = value
+            editor = self.factory_field(pad_id, channel)
+            if editor is not None:  # only the GF view shows them
+                editor.set_value(value)
+
+    def _apply_factors(self) -> None:
+        for (pad_id, channel), value in self._factors.items():
+            editor = self.factory_field(pad_id, channel)
+            if editor is not None:
+                editor.set_value(value)
 
     def factory_field(self, pad_id: int, channel: int) -> NumericField | None:
         """The editable GF field of one channel, or None if this view has none."""
@@ -176,9 +194,13 @@ class PadView(QWidget):
                 continue  # read-only reference under a calibration row
             channel = int(name.removeprefix("ch"))
             editor.committed.connect(
-                lambda value, p=pad_id, c=channel: self.factoryChanged.emit(p, c, value)
+                lambda value, p=pad_id, c=channel: self._on_committed(p, c, value)
             )
             editor.rejected.connect(self.factoryRejected)
+
+    def _on_committed(self, pad_id: int, channel: int, value: int) -> None:
+        self._factors[(pad_id, channel)] = value
+        self.factoryChanged.emit(pad_id, channel, value)
 
     def _heading(self) -> QWidget:
         # Title and toggle share one cell so the title stays optically centred
