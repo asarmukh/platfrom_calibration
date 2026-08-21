@@ -40,6 +40,8 @@ from device.protocol import (
     hex_dump,
     parse_read_response,
     save_factory_gf,
+    start_calibration,
+    stop_calibration,
     write_factory_gf,
 )
 from device.serial_link import SerialLinkError
@@ -67,6 +69,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.config = config
         self._running = False  # latched by the Start button
+        self._reverting = False  # guards the Start button's own undo
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*DEFAULT_SIZE)
         self.setMinimumSize(*MINIMUM_SIZE)
@@ -195,12 +198,27 @@ class MainWindow(QMainWindow):
         """Tell the device to keep the factory GFs it was given."""
         self._send_per_pad(write_factory_gf, "write")
 
-    def _send_per_pad(self, build: Callable[[int, int], bytes], action: str) -> None:
+    def _send_once(self, build: Callable[[int], bytes], action: str) -> bool:
+        """Send one frame addressed to the platform rather than to a pad."""
+        platform = self._platform_id()
+        if platform is None:
+            self._show_status(theme.ACCENT, "set a platform ID first", "")
+            return False
+        try:
+            frame = build(platform)
+            self.connection.send(frame)
+        except (ProtocolError, SerialLinkError) as exc:
+            self._show_status(theme.ACCENT, f"{action} failed — {exc}", str(exc))
+            return False
+        self._show_status(theme.ONLINE, f"{action} sent", hex_dump(frame))
+        return True
+
+    def _send_per_pad(self, build: Callable[[int, int], bytes], action: str) -> bool:
         """Send one frame per pad, as the sheet spells out for Read."""
         platform = self._platform_id()
         if platform is None:
             self._show_status(theme.ACCENT, "set a platform ID first", "")
-            return
+            return False
 
         pads = len(self.workspace.pad_view.pads)
         frames: list[bytes] = []
@@ -217,7 +235,7 @@ class MainWindow(QMainWindow):
                 self._show_status(
                     theme.ACCENT, f"{action} failed on pad {pad} — {exc}", str(exc)
                 )
-                return
+                return False
             frames.append(frame)
 
         self._show_status(
@@ -225,6 +243,7 @@ class MainWindow(QMainWindow):
             f"{action} sent for {pads} pad(s)",
             "\n".join(hex_dump(frame) for frame in frames),
         )
+        return True
 
     def _on_frame(self, frame: bytes) -> None:
         """An answer arrived — show its gain factors on the pad it belongs to."""
@@ -276,6 +295,16 @@ class MainWindow(QMainWindow):
     def _on_start_toggled(self, running: bool) -> None:
         self._running = running
         self.sidebar.start_button.setText("STOP" if running else "START")
+        # No port, no run: the button is only a latch then, and a dropped
+        # connection unlatches it here rather than sending into a closed port.
+        if not self._reverting and self.connection.state == CONNECTED:
+            action = "start" if running else "stop"
+            build = start_calibration if running else stop_calibration
+            if not self._send_once(build, action) and running:
+                self._reverting = True
+                self.sidebar.start_button.setChecked(False)  # nothing went out
+                self._reverting = False
+                return
         self._apply_controls()
 
     def _apply_controls(self) -> None:

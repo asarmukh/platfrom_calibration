@@ -20,6 +20,9 @@ CMD_PADS_CALIBRATION_STOP = 0x51
 CMD_PADS_GET_FACTORY_GF = 0x52
 CMD_PADS_SAVE_FACTORY_GF = 0x53
 
+# pad ID of a command meant for the whole platform
+NO_PAD = 0
+
 # accepted range of a factory gain factor
 GF_MIN = 10
 GF_MAX = 200
@@ -87,6 +90,16 @@ def get_factory_gf(platform_id: int, pad_id: int) -> bytes:
 def write_factory_gf(platform_id: int, pad_id: int) -> bytes:
     """"Write": commit the factory GFs held by the device."""
     return build_frame(platform_id, pad_id, CMD_PADS_SAVE_FACTORY_GF)
+
+
+def start_calibration(platform_id: int) -> bytes:
+    """"Start": begin a calibration run. Whole platform, so no pad ID."""
+    return build_frame(platform_id, NO_PAD, CMD_PADS_CALIBRATION_START)
+
+
+def stop_calibration(platform_id: int) -> bytes:
+    """"Stop": end the calibration run."""
+    return build_frame(platform_id, NO_PAD, CMD_PADS_CALIBRATION_STOP)
 
 
 def parse_read_response(frame: bytes) -> tuple[int, int, list[int]]:
