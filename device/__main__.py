@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from settings import CONFIG_PATH, AppConfig
+from .settings import CONFIG_PATH, AppConfig
 from .serial_link import SerialLink, SerialLinkError, available_ports
 
 

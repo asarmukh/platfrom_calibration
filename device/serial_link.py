@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - depends on the environment
     serial = None
     list_ports = None
 
-from settings import RetrySettings, SerialSettings
+from .settings import RetrySettings, SerialSettings
 
 log = logging.getLogger(__name__)
 

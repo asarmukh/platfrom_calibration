@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import theme
+from . import theme
 from device.protocol import GF_MAX, GF_MIN
 from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot

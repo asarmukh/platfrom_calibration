@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import theme
+from . import theme
 
 
 def label(

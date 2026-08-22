@@ -9,7 +9,7 @@
 
 ## 1. Запуск и подключение
 
-1. `main.py` → `app.main()`: читается `config.ini` (`settings.AppConfig.load()`).
+1. `main.py` → `app.main()`: читается `config.ini` (`device.settings.AppConfig.load()`).
    Битый конфиг не мешает запуску — берутся значения по умолчанию, а в статус-бар
    пишется `config error, using defaults — …`.
 2. Окно показывается, и только потом (`QTimer.singleShot(0, …)`) стартует

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import theme
+from . import theme
 from .common import NumericField, SegmentedControl, label
 from .pad_card import CAL_DEFAULT, PadRow
 

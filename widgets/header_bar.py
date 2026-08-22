@@ -17,13 +17,13 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
-import theme
+from . import theme
 from paths import bundle_dir
 
 from .common import label, rule
 
-LOGO_SVG = bundle_dir() / "logo.svg"
-LOGO_RASTER = bundle_dir() / "logo.jpeg"
+LOGO_SVG = bundle_dir() / "assets" / "logo.svg"
+LOGO_RASTER = bundle_dir() / "assets" / "logo.jpeg"
 LOGO_HEIGHT = 24  # sized so the mark reads level with the product title
 
 # Alpha keying thresholds for the raster fallback: how far a pixel must differ

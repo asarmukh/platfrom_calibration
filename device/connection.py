@@ -12,7 +12,7 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-from settings import RetrySettings, SerialSettings
+from .settings import RetrySettings, SerialSettings
 from .protocol import hex_dump, take_responses
 from .serial_link import SerialLink, SerialLinkError, available_ports
 

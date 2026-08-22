@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
-import theme
+from . import theme
 
 CORNER_MARK = 10  # size of the red orientation triangle, in px
 

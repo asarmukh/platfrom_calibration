@@ -24,8 +24,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import theme
-from settings import AppConfig
+from widgets import theme
+from device.settings import AppConfig
 from device.connection import (
     CONNECTED,
     CONNECTING,
@@ -480,3 +480,7 @@ def main(argv: list[str] | None = None) -> int:
     window = MainWindow(config, startup_error)
     window.show()
     return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

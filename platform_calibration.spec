@@ -7,13 +7,13 @@ and baud rate stay editable.
 """
 
 a = Analysis(
-    ["main.py"],
+    ["app.py"],
     pathex=["."],
     binaries=[],
     # Read-only assets, unpacked beside the app at runtime (see paths.py).
     datas=[
-        ("logo.svg", "."),
-        ("logo.jpeg", "."),
+        ("assets/logo.svg", "assets"),
+        ("assets/logo.jpeg", "assets"),
     ],
     hiddenimports=["serial.tools.list_ports"],
     hookspath=[],
@@ -53,5 +53,5 @@ exe = EXE(
     # console=True prints the connection log; flip it when debugging a port.
     console=False,
     disable_windowed_traceback=False,
-    icon="logo.ico",
+    icon="assets/logo.ico",
 )

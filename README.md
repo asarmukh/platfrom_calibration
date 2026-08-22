@@ -12,7 +12,7 @@ disabled until the device is actually connected.
 
 ```sh
 pip install -r requirements.txt
-python main.py
+python app.py
 ```
 
 The status bar reports `connecting to COM5…`, then either
@@ -44,7 +44,7 @@ it.
 - **No console window.** Flip `console=False` to `True` in
   `platform_calibration.spec` when you need to see the connection log while
   debugging a port.
-- **Icon**: `logo.ico` — the arrow from `logo.svg` on the panel colour.
+- **Icon**: `assets/logo.ico` — the arrow from `assets/logo.svg` on the panel colour.
 - Startup takes a couple of seconds: a one-file build unpacks itself to a
   temporary folder first. For an instant start, replace `EXE(...)` with the
   standard `EXE(...) + COLLECT(...)` pair to get a folder build instead.
@@ -111,16 +111,17 @@ to report progress, and `cancel` — a `threading.Event` that aborts the loop
 ## Layout
 
 ```
-main.py                   launcher
 config.ini                serial port + retry settings
-app.py                    QApplication + MainWindow (header / sidebar / workspace)
-settings.py               config schema: dataclasses, defaults, load/save
-theme.py                  colours, fonts and the global Qt style sheet
+assets/                   logo.svg, logo.jpeg, logo.ico
+paths.py                  project root / bundle directory (PyInstaller aware)
+app.py                    entry point: QApplication + MainWindow
 device/
+  settings.py             config schema: dataclasses, defaults, load/save
   serial_link.py          serial connection with retry/backoff (no Qt)
   connection.py           Qt controller: connects on a worker thread
   __main__.py             connection check CLI
 widgets/
+  theme.py                colours, fonts and the global Qt style sheet
   common.py               labels, fields, buttons, segmented control
   header_bar.py           title bar
   sidebar.py              platform type, platform ID, device actions, totals
