@@ -19,6 +19,7 @@ CMD_PADS_CALIBRATION_START = 0x50
 CMD_PADS_CALIBRATION_STOP = 0x51
 CMD_PADS_GET_FACTORY_GF = 0x52
 CMD_PADS_SAVE_FACTORY_GF = 0x53
+CMD_PADS_SAVE_CF = 0x55
 
 # pad ID of a command meant for the whole platform
 NO_PAD = 0
@@ -27,11 +28,20 @@ NO_PAD = 0
 GF_MIN = 10
 GF_MAX = 200
 
-# A Read answer carries one gain factor per channel, behind its own header:
-#     be ef | platform ID | pad ID | CF[8] | CRC_LOW CRC_HIGH | 04 04
+# Answers come behind their own header and share one layout:
+#     be ef | platform ID | pad ID | GF[8]       | CRC_LOW CRC_HIGH | 04 04
+#     be ef | platform ID | pad ID | readings[8] | CRC_LOW CRC_HIGH | 04 04
+# They are the same size, so only the run tells them apart: readings arrive
+# between Start and Stop, gain factors the rest of the time. A command that
+# stores something is acknowledged with a shorter frame, which carries no pad:
+#     be ef | platform ID | cmd | 0x06 | CRC_LOW CRC_HIGH | 04 04
 RESPONSE_HEADER = b"\xbe\xef"
-CF_COUNT = 8
-RESPONSE_SIZE = 2 + 2 + CF_COUNT + 2 + 2
+GF_COUNT = 8
+RESPONSE_SIZE = 2 + 2 + GF_COUNT + 2 + 2
+ACK = 0x06
+ACK_SIZE = 2 + 2 + 1 + 2 + 2
+# Shortest first: a short frame that checks out cannot be the head of a long one.
+RESPONSE_SIZES = (ACK_SIZE, RESPONSE_SIZE)
 
 
 class ProtocolError(ValueError):
@@ -92,6 +102,11 @@ def write_factory_gf(platform_id: int, pad_id: int) -> bytes:
     return build_frame(platform_id, pad_id, CMD_PADS_SAVE_FACTORY_GF)
 
 
+def save_cf(platform_id: int, pad_id: int, channel: int, value: int) -> bytes:
+    """"Write" in the CAL section: store one channel's calibration factor."""
+    return build_frame(platform_id, pad_id, CMD_PADS_SAVE_CF, channel, value)
+
+
 def start_calibration(platform_id: int) -> bytes:
     """"Start": begin a calibration run. Whole platform, so no pad ID."""
     return build_frame(platform_id, NO_PAD, CMD_PADS_CALIBRATION_START)
@@ -102,18 +117,44 @@ def stop_calibration(platform_id: int) -> bytes:
     return build_frame(platform_id, NO_PAD, CMD_PADS_CALIBRATION_STOP)
 
 
-def parse_read_response(frame: bytes) -> tuple[int, int, list[int]]:
-    """Split a Read answer into platform ID, pad ID and its CF[8]."""
-    if len(frame) != RESPONSE_SIZE:
-        raise ProtocolError(f"expected {RESPONSE_SIZE} bytes, got {len(frame)}")
+def is_ack(frame: bytes) -> bool:
+    """True for the short frame a stored value is acknowledged with."""
+    return len(frame) == ACK_SIZE
+
+
+def parse_ack(frame: bytes) -> tuple[int, int]:
+    """Split an acknowledgement into platform ID and the command acknowledged."""
+    body = _response_body(frame, ACK_SIZE)
+    if body[2] != ACK:
+        raise ProtocolError(f"ack byte {body[2]:#04x}, expected {ACK:#04x}")
+    return body[0], body[1]
+
+
+def parse_response(frame: bytes, *, signed: bool = False) -> tuple[int, int, list[int]]:
+    """Split an answer into platform ID, pad ID and its eight values.
+
+    Gain factors are plain bytes; readings are signed.
+    """
+    body = _response_body(frame, RESPONSE_SIZE)
+    values = body[2:]
+    return body[0], body[1], list(
+        int.from_bytes(values[i : i + 1], "little", signed=signed)
+        for i in range(GF_COUNT)
+    )
+
+
+def _response_body(frame: bytes, size: int) -> bytes:
+    """The CRC-checked payload of an answer: everything but header, CRC and eot."""
+    if len(frame) != size:
+        raise ProtocolError(f"expected {size} bytes, got {len(frame)}")
     if not frame.startswith(RESPONSE_HEADER) or not frame.endswith(EOT):
         raise ProtocolError(f"not a response frame: {hex_dump(frame)}")
-    body = frame[2 : 4 + CF_COUNT]  # platform ID .. CF[7], what the CRC covers
-    sent = frame[4 + CF_COUNT] | frame[5 + CF_COUNT] << 8
+    body = frame[2:-4]
+    sent = frame[-4] | frame[-3] << 8
     expected = crc16(body)
     if sent != expected:
         raise ProtocolError(f"CRC {sent:#06x}, expected {expected:#06x}")
-    return body[0], body[1], list(body[2:])
+    return body
 
 
 def take_responses(buffer: bytearray) -> list[bytes]:
@@ -131,14 +172,31 @@ def take_responses(buffer: bytearray) -> list[bytes]:
             del buffer[: max(0, len(buffer) - 1)]
             return frames
         del buffer[:start]
-        if len(buffer) < RESPONSE_SIZE:
-            return frames
-        frame = bytes(buffer[:RESPONSE_SIZE])
-        if frame.endswith(EOT):
-            del buffer[:RESPONSE_SIZE]
+
+        # Answers come in two lengths, so the CRC is what says which one this
+        # is; a short frame that checks out cannot be the head of a long one.
+        frame = next(
+            (
+                bytes(buffer[:size])
+                for size in RESPONSE_SIZES
+                if len(buffer) >= size and _looks_whole(bytes(buffer[:size]))
+            ),
+            None,
+        )
+        if frame is not None:
+            del buffer[: len(frame)]
             frames.append(frame)
-        else:
-            del buffer[:2]  # false header, look for the next one
+            continue
+        if len(buffer) < max(RESPONSE_SIZES):
+            return frames  # may still be the start of a longer frame
+        del buffer[:2]  # false header, look for the next one
+
+
+def _looks_whole(frame: bytes) -> bool:
+    if not frame.endswith(EOT):
+        return False
+    body = frame[2:-4]
+    return frame[-4] | frame[-3] << 8 == crc16(body)
 
 
 def hex_dump(frame: bytes) -> str:

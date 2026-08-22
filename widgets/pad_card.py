@@ -35,6 +35,8 @@ BLOCK_HEIGHT = 67  # label + field row + factory field; keeps GF and CAL cards
 class ChannelBlock(QWidget):
     """One channel: name, and either its calibration row or its factory GF."""
 
+    # A stepper moved the calibration factor; carries its new value.
+    factorChanged = Signal(int)
     # A stepper was pressed at the end of the range; carries the limit reached.
     limitReached = Signal(int)
 
@@ -110,7 +112,16 @@ class ChannelBlock(QWidget):
         if value == self.factor:
             self.limitReached.emit(value)
             return
+        self.set_factor(value)
+
+    def set_factor(self, value: int) -> None:
+        """Show a calibration factor, whatever its source."""
         self.calibration.setText(str(value))
+        self.factorChanged.emit(value)
+
+    def show_reading(self, value: float) -> None:
+        """Show one channel's reading, already scaled by its factors."""
+        self.value.setText(f"{value:.1f}")
 
     @property
     def factor(self) -> int:

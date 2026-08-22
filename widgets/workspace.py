@@ -15,9 +15,10 @@ from PySide6.QtWidgets import (
 
 import theme
 from .common import NumericField, SegmentedControl, label
-from .pad_card import PadRow
+from .pad_card import CAL_DEFAULT, PadRow
 
 CONTENT_MAX_WIDTH = 1000
+CHANNELS = 8  # one calibration factor per channel, as the device reports them
 
 EMPTY = 0
 PADS = 1
@@ -73,6 +74,15 @@ class PadView(QWidget):
         # (pad, channel) -> gain factor, kept here because switching view
         # recreates the widgets that show it.
         self._factors: dict[tuple[int, int], int] = {}
+        # The calibration factors as the device reported them: the baseline a
+        # reading is scaled against. The steppers move the shown value, not
+        # these.
+        self.calibration_factor_single = [CAL_DEFAULT] * CHANNELS
+        self.calibration_factor_double = [
+            [CAL_DEFAULT] * CHANNELS for _ in range(2)
+        ]
+        # (pad, channel) -> what the CAL factor field shows, steppers included.
+        self._shown_factors: dict[tuple[int, int], int] = {}
         self.pads: list[PadRow] = []
 
         column = QVBoxLayout(self)
@@ -166,18 +176,70 @@ class PadView(QWidget):
         self._apply_factors()
 
     def set_factors(self, pad_id: int, values: dict[int, int]) -> None:
-        """Show the gain factors a pad reported, by channel number."""
+        """Store and show what a pad reported, by channel number.
+
+        The same answer feeds both sections: the GF fields and, kept apart from
+        them, the calibration baseline the CAL readings are scaled against.
+        """
         for channel, value in values.items():
             self._factors[(pad_id, channel)] = value
             editor = self.factory_field(pad_id, channel)
             if editor is not None:  # only the GF view shows them
                 editor.set_value(value)
 
+            if 0 <= channel < CHANNELS:
+                if self._pad_count > 1:
+                    self.calibration_factor_double[pad_id - 1][channel] = value
+                else:
+                    self.calibration_factor_single[channel] = value
+            self._shown_factors[(pad_id, channel)] = value
+            block = self.channel_block(pad_id, channel)
+            if block is not None:  # only the CAL view has the factor field
+                block.set_factor(value)
+
+    def calibration_factor(self, pad_id: int, channel: int) -> int:
+        """The stored factor a reading on this channel is scaled against."""
+        if not 0 <= channel < CHANNELS:
+            return CAL_DEFAULT
+        if self._pad_count > 1:
+            return self.calibration_factor_double[pad_id - 1][channel]
+        return self.calibration_factor_single[channel]
+
+    def set_reading(self, pad_id: int, channel: int, reading: float) -> None:
+        """Scale one channel's reading by its factors and show it."""
+        block = self.channel_block(pad_id, channel)
+        if block is None:
+            return  # not in the CAL view, nothing to show it in
+        base = self.calibration_factor(pad_id, channel)
+        # A channel the device does not use reports a zero factor.
+        value = reading * block.factor / (base * 100) if base else 0.0
+        block.show_reading(value)
+
+    def channel_numbers(self, pad_id: int) -> list[int]:
+        """The channels a pad actually shows, in order."""
+        index = pad_id - 1
+        if not 0 <= index < len(self.pads):
+            return []
+        return sorted(
+            int(name.removeprefix("ch")) for name in self.pads[index].card.channels
+        )
+
+    def channel_block(self, pad_id: int, channel: int):
+        """One channel's CAL widgets, or None if this view has none."""
+        index = pad_id - 1
+        if self._view != CAL or not 0 <= index < len(self.pads):
+            return None
+        return self.pads[index].card.channels.get(f"ch{channel}")
+
     def _apply_factors(self) -> None:
         for (pad_id, channel), value in self._factors.items():
             editor = self.factory_field(pad_id, channel)
             if editor is not None:
                 editor.set_value(value)
+        for (pad_id, channel), value in self._shown_factors.items():
+            block = self.channel_block(pad_id, channel)
+            if block is not None:
+                block.set_factor(value)
 
     def factory_field(self, pad_id: int, channel: int) -> NumericField | None:
         """The editable GF field of one channel, or None if this view has none."""
@@ -194,6 +256,11 @@ class PadView(QWidget):
             channel = int(name.removeprefix("ch"))
             block.limitReached.connect(
                 lambda limit, p=pad_id, c=channel: self.calibrationLimit.emit(p, c, limit)
+            )
+            block.factorChanged.connect(
+                lambda value, p=pad_id, c=channel: self._shown_factors.__setitem__(
+                    (p, c), value
+                )
             )
             editor = getattr(block, "factory", None)
             if not isinstance(editor, NumericField):

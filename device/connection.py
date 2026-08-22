@@ -81,10 +81,12 @@ class _ReadWorker(QObject):
                 return
             if chunk:
                 # Raw first, so bytes that never make a frame are still visible.
-                log.info("rx %s", hex_dump(chunk))
+                # Debug level because a calibration run streams readings and
+                # would bury everything else.
+                log.debug("rx %s", hex_dump(chunk))
             buffer += chunk
             for frame in take_responses(buffer):
-                log.info("rx frame %s", hex_dump(frame))
+                log.debug("rx frame %s", hex_dump(frame))
                 self.received.emit(frame)
 
 

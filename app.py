@@ -33,12 +33,16 @@ from device.connection import (
     FAILED,
 )
 from device.protocol import (
+    CMD_PADS_SAVE_CF,
     GF_MAX,
     GF_MIN,
     ProtocolError,
     get_factory_gf,
     hex_dump,
-    parse_read_response,
+    is_ack,
+    parse_ack,
+    parse_response,
+    save_cf,
     save_factory_gf,
     start_calibration,
     stop_calibration,
@@ -57,6 +61,7 @@ WINDOW_TITLE = "Platform Calibration"
 DEFAULT_SIZE = (1280, 800)
 MINIMUM_SIZE = (1024, 680)
 PAD_GAP = 0.2  # seconds between per-pad command frames
+ACK_TIMEOUT = 200  # ms to wait for a stored value to be acknowledged
 
 STATE_COLORS = {
     CONNECTED: theme.ONLINE,
@@ -71,6 +76,13 @@ class MainWindow(QMainWindow):
         self.config = config
         self._running = False  # latched by the Start button
         self._reverting = False  # guards the Start button's own undo
+        # Write in the CAL section walks its frames one acknowledgement at a
+        # time, so the queue and its timer live here rather than in a loop.
+        self._cf_queue: list[tuple[bytes, str]] = []
+        self._cf_timer = QTimer(self)
+        self._cf_timer.setSingleShot(True)
+        self._cf_timer.setInterval(ACK_TIMEOUT)
+        self._cf_timer.timeout.connect(self._on_cf_timeout)
         self.setWindowTitle(WINDOW_TITLE)
         self.resize(*DEFAULT_SIZE)
         self.setMinimumSize(*MINIMUM_SIZE)
@@ -197,8 +209,78 @@ class MainWindow(QMainWindow):
         self._send_per_pad(get_factory_gf, "read")
 
     def _on_write(self) -> None:
-        """Tell the device to keep the factory GFs it was given."""
-        self._send_per_pad(write_factory_gf, "write")
+        """Store what the current section is set up for."""
+        if self.workspace.pad_view.view == CAL:
+            self._write_calibration_factors()
+        else:
+            self._send_per_pad(write_factory_gf, "write")
+
+    def _write_calibration_factors(self) -> None:
+        """Send every shown calibration factor, one acknowledgement at a time.
+
+        Each channel is stored on its own; once the device has confirmed them
+        all, each pad is told to keep them with a zeroed frame.
+        """
+        if self._cf_queue:
+            self._show_status(theme.ACCENT, "write already in progress", "")
+            return
+        platform = self._platform_id()
+        if platform is None:
+            self._show_status(theme.ACCENT, "set a platform ID first", "")
+            return
+
+        view = self.workspace.pad_view
+        pads = range(1, len(view.pads) + 1)
+        queue: list[tuple[bytes, str]] = []
+        try:
+            for pad in pads:
+                for channel in view.channel_numbers(pad):
+                    factor = view.channel_block(pad, channel).factor
+                    queue.append(
+                        (
+                            save_cf(platform, pad, channel, factor),
+                            f"pad {pad} ch{channel} cf={factor}",
+                        )
+                    )
+            for pad in pads:
+                queue.append((save_cf(platform, pad, 0, 0), f"pad {pad} save"))
+        except ProtocolError as exc:
+            self._show_status(theme.ACCENT, f"write failed — {exc}", str(exc))
+            return
+
+        self._cf_queue = queue
+        self._send_next_cf()
+
+    def _send_next_cf(self) -> None:
+        """Put the next frame of the write sequence on the wire."""
+        if not self._cf_queue:
+            self._show_status(theme.ONLINE, "calibration factors written", "")
+            return
+        frame, what = self._cf_queue[0]
+        try:
+            self.connection.send(frame)
+        except SerialLinkError as exc:
+            self._cf_queue.clear()
+            self._show_status(theme.ACCENT, f"write failed — {exc}", str(exc))
+            return
+        self._show_status(theme.ACCENT_SOFT, f"{what} sent", hex_dump(frame))
+        self._cf_timer.start()
+
+    def _on_cf_ack(self, cmd: int) -> None:
+        """One frame of the write sequence was acknowledged."""
+        if not self._cf_queue or cmd != CMD_PADS_SAVE_CF:
+            return
+        self._cf_timer.stop()
+        self._cf_queue.pop(0)
+        self._send_next_cf()
+
+    def _on_cf_timeout(self) -> None:
+        """Nothing came back in time, so the rest of the sequence is dropped."""
+        _, what = self._cf_queue[0]
+        self._cf_queue.clear()
+        self._show_status(
+            theme.ACCENT, f"no answer to {what} in {ACK_TIMEOUT}ms, write stopped", ""
+        )
 
     def _send_once(self, build: Callable[[int], bytes], action: str) -> bool:
         """Send one frame addressed to the platform rather than to a pad."""
@@ -248,9 +330,24 @@ class MainWindow(QMainWindow):
         return True
 
     def _on_frame(self, frame: bytes) -> None:
-        """An answer arrived — show its gain factors on the pad it belongs to."""
+        """An answer arrived: readings during a run, gain factors otherwise."""
+        if is_ack(frame):
+            try:
+                platform, cmd = parse_ack(frame)
+            except ProtocolError as exc:
+                log.warning("bad ack %s — %s", hex_dump(frame), exc)
+                self._show_status(theme.ACCENT, f"bad ack — {exc}", hex_dump(frame))
+                return
+            expected = self._platform_id()
+            if expected is not None and platform != expected:
+                return
+            log.info("platform %d ack for cmd %#04x", platform, cmd)
+            self._on_cf_ack(cmd)
+            return
+
+        readings = self._running  # a run is the only thing that sends readings
         try:
-            platform, pad, factors = parse_read_response(frame)
+            platform, pad, values = parse_response(frame, signed=readings)
         except ProtocolError as exc:
             log.warning("bad answer %s — %s", hex_dump(frame), exc)
             self._show_status(theme.ACCENT, f"bad answer — {exc}", hex_dump(frame))
@@ -261,14 +358,22 @@ class MainWindow(QMainWindow):
             log.info("ignoring answer from platform %d (expected %d)", platform, expected)
             return
 
-        # CF[i] belongs to ch<i>; the card only shows some of the eight.
+        # Value i belongs to ch<i>; the card only shows some of the eight.
+        if readings:
+            # One frame per sample, so this is far too busy for the status bar.
+            log.debug("platform %d pad %d readings %s", platform, pad, values)
+            for channel, reading in enumerate(values):
+                self.workspace.pad_view.set_reading(pad, channel, reading)
+            return
+
         log.info(
-            "platform %d pad %d gf %s",
+            "platform %d pad %d gf %s | %s",
             platform,
             pad,
-            ", ".join(f"ch{ch}={value}" for ch, value in enumerate(factors)),
+            ", ".join(f"ch{ch}={value}" for ch, value in enumerate(values)),
+            hex_dump(frame),
         )
-        self.workspace.pad_view.set_factors(pad, dict(enumerate(factors)))
+        self.workspace.pad_view.set_factors(pad, dict(enumerate(values)))
         self._show_status(
             theme.ONLINE, f"pad {pad} gf read", hex_dump(frame)
         )
