@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -17,7 +17,9 @@ from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot
 
 GF_DEFAULT = 10  # what an untouched channel shows before a read
-CAL_DEFAULT = "0.0"  # calibration factor before the steppers touch it
+CAL_MIN = 10  # the steppers keep the calibration factor inside this range
+CAL_MAX = 200
+CAL_DEFAULT = CAL_MIN
 
 CORNER_MARK = 20  # orientation triangle in the card's top-left corner
 SIDE_COLUMN = 108  # forces column and cop column width
@@ -32,6 +34,9 @@ BLOCK_HEIGHT = 67  # label + field row + factory field; keeps GF and CAL cards
 
 class ChannelBlock(QWidget):
     """One channel: name, and either its calibration row or its factory GF."""
+
+    # A stepper was pressed at the end of the range; carries the limit reached.
+    limitReached = Signal(int)
 
     def __init__(
         self,
@@ -64,10 +69,12 @@ class ChannelBlock(QWidget):
 
             # The factor the steppers are working on, under its own channel.
             self.calibration = readout(
-                CAL_DEFAULT, variant="readoutSoft", size=9, height=20
+                str(CAL_DEFAULT), variant="readoutSoft", size=9, height=20
             )
             self.calibration.setMaximumWidth(FIELD_WIDTH)
             column.addWidget(self.calibration, 0, Qt.AlignmentFlag.AlignHCenter)
+            self.decrement.clicked.connect(lambda: self.step(-1))
+            self.increment.clicked.connect(lambda: self.step(1))
         else:
             # In the GF view the factory gain factor is the field being set up,
             # so it is editable and takes the calibration input's footprint.
@@ -96,6 +103,19 @@ class ChannelBlock(QWidget):
             column.addLayout(row)
 
         column.addStretch(1)
+
+    def step(self, delta: int) -> None:
+        """Move the calibration factor one notch, staying inside its range."""
+        value = min(CAL_MAX, max(CAL_MIN, self.factor + delta))
+        if value == self.factor:
+            self.limitReached.emit(value)
+            return
+        self.calibration.setText(str(value))
+
+    @property
+    def factor(self) -> int:
+        """The calibration factor currently shown."""
+        return int(self.calibration.text())
 
 
 class PadCard(QWidget):

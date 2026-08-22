@@ -62,6 +62,8 @@ class PadView(QWidget):
     factoryChanged = Signal(int, int, int)
     # Text that could not be accepted as a GF value.
     factoryRejected = Signal(str)
+    # A stepper hit the end of its range: pad, channel, the limit reached.
+    calibrationLimit = Signal(int, int, int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -158,7 +160,7 @@ class PadView(QWidget):
             )
             self.pads.append(pad)
             self.pad_area.addWidget(pad)
-            self._connect_factory_fields(pad, index + 1)
+            self._connect_channels(pad, index + 1)
 
         self._apply_stepper_state()  # the rows were just recreated
         self._apply_factors()
@@ -186,13 +188,16 @@ class PadView(QWidget):
         editor = getattr(block, "factory", None)
         return editor if isinstance(editor, NumericField) else None
 
-    def _connect_factory_fields(self, pad: PadRow, pad_id: int) -> None:
-        """Relay each editable GF field as (pad, channel, value)."""
+    def _connect_channels(self, pad: PadRow, pad_id: int) -> None:
+        """Relay what a channel's widgets report as (pad, channel, ...)."""
         for name, block in pad.card.channels.items():
+            channel = int(name.removeprefix("ch"))
+            block.limitReached.connect(
+                lambda limit, p=pad_id, c=channel: self.calibrationLimit.emit(p, c, limit)
+            )
             editor = getattr(block, "factory", None)
             if not isinstance(editor, NumericField):
-                continue  # read-only reference under a calibration row
-            channel = int(name.removeprefix("ch"))
+                continue  # the CAL view has no editable GF field
             editor.committed.connect(
                 lambda value, p=pad_id, c=channel: self._on_committed(p, c, value)
             )
