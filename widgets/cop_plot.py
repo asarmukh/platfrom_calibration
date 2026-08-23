@@ -14,8 +14,9 @@ CORNER_MARK = 10  # size of the red orientation triangle, in px
 class CopPlot(QWidget):
     """Framed plot with a crosshair, an orientation mark and a marker dot.
 
-    ``extra_gridlines`` adds the quarter lines used by the double-platform
-    "total cop" plot.
+    ``x_range``/``y_range`` are the half-extents the marker is plotted against,
+    in centimetres from the platform centre. ``extra_gridlines`` adds the
+    quarter lines used by the double-platform "total cop" plot.
     """
 
     def __init__(
@@ -23,12 +24,30 @@ class CopPlot(QWidget):
         *,
         height: int = 68,
         extra_gridlines: bool = False,
+        x_range: float = 10.0,
+        y_range: float = 7.0,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setFixedHeight(height)
         self._extra_gridlines = extra_gridlines
-        self._marker = QPointF(0.5, 0.5)  # normalised position within the frame
+        self._x_range = x_range
+        self._y_range = y_range
+        self._marker: QPointF | None = None  # nothing to plot until a reading
+
+    def set_point(self, x: float | None, y: float | None) -> None:
+        """Plot a centre of pressure in cm, or clear it when it is undefined."""
+        if x is None or y is None:
+            self._marker = None
+        else:
+            # Screen y grows downwards, the platform's y axis upwards.
+            self._marker = QPointF(
+                _normalise(x, self._x_range), 1.0 - _normalise(y, self._y_range)
+            )
+        self.update()
+
+    def clear(self) -> None:
+        self.set_point(None, None)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 (Qt naming)
         painter = QPainter(self)
@@ -65,6 +84,8 @@ class CopPlot(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(frame)
 
+        if self._marker is None:
+            return  # no load, no centre of pressure
         centre = QPointF(
             rect.left() + rect.width() * self._marker.x(),
             rect.top() + rect.height() * self._marker.y(),
@@ -72,3 +93,10 @@ class CopPlot(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(theme.ACCENT))
         painter.drawEllipse(centre, 3.5, 3.5)
+
+
+def _normalise(value: float, half_range: float) -> float:
+    """Map -half_range..+half_range onto 0..1, clamped to the frame."""
+    if half_range <= 0:
+        return 0.5
+    return min(1.0, max(0.0, 0.5 + value / (2 * half_range)))

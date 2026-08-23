@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from . import theme
 from .common import (
+    NEUTRAL,
     SegmentedControl,
     action_button,
     caption,
@@ -50,7 +51,9 @@ class SidebarPanel(QFrame):
         box = QVBoxLayout()
         box.setSpacing(9)
         box.addWidget(caption("Platform type"))
-        self.platform_type = SegmentedControl("SINGLE", "DOUBLE", active=0)
+        # No default: the operator says which platform is on the bench, and
+        # the pad area stays empty until they do.
+        self.platform_type = SegmentedControl("SINGLE", "DOUBLE", active=NEUTRAL)
         box.addWidget(self.platform_type)
         return box
 
@@ -114,6 +117,20 @@ class SidebarPanel(QFrame):
 
         box.addLayout(grid)
         return box
+
+    def set_totals(self, totals) -> None:
+        """Render a calc.Totals into the TOTAL block."""
+        for name, value in (("Fx", totals.fx), ("Fy", totals.fy), ("Fz", totals.fz)):
+            self.totals[name].setText(f"{value:.1f}")
+        for name, value in (("xcop", totals.xcop), ("ycop", totals.ycop)):
+            # No load means no centre of pressure, rather than a misleading 0.
+            self.totals[name].setText("—" if value is None else f"{value:.2f}")
+
+    def clear_totals(self) -> None:
+        for name in ("Fx", "Fy", "Fz"):
+            self.totals[name].setText("0.0")
+        for name in ("xcop", "ycop"):
+            self.totals[name].setText("—")
 
 
 class Sidebar(QScrollArea):

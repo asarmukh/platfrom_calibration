@@ -1,12 +1,29 @@
 # Platform Calibration
 
 Desktop UI for the force-platform calibration workflow, built with PySide6 from
-the *Platform Calibration v2* design.
+the *Platform Calibration v2* design and the ТЗ in `docs/`.
 
-The window opens the serial port from `config.ini` on startup and shows the
-result in the status bar. The calibration widgets themselves are still
-presentation-only — no readings, no calculations — but Read / Write / Start stay
-disabled until the device is actually connected.
+The window opens the serial port from `config.ini` on startup, then drives the
+whole calibration conversation: factory gain factors, calibration factors, the
+reading stream a run produces, and the forces and centre of pressure computed
+from it. Neither platform type is preselected: picking SINGLE or DOUBLE brings
+up that many pad cards with their defaults, and entering a Platform ID is what
+makes them usable — the ТЗ shows the values at startup but forbids any action
+until the platform is addressed.
+
+## Tests
+
+```sh
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite is written against the ТЗ section by section: frame layouts and CRC,
+the section 6 formulas, and what each button puts on the wire. See
+`docs/OPERATION.md` for the behaviour it pins down.
+
+`python tests/render_views.py` renders the window's states to
+`tests/_views/*.png` for a visual check.
 
 ## Run
 
@@ -41,9 +58,9 @@ it.
   first run, so the port and baud rate stay editable — that is what `paths.py`
   is for: assets are read from the unpacked bundle, `config.ini` from the
   executable's own folder.
-- **No console window.** Flip `console=False` to `True` in
-  `platform_calibration.spec` when you need to see the connection log while
-  debugging a port.
+- **Console window.** `console=True` in `platform_calibration.spec`, because the
+  ТЗ asks for a log of every command and answer. Flip it to `False` only if the
+  operator is not supposed to see one.
 - **Icon**: `assets/logo.ico` — the arrow from `assets/logo.svg` on the panel colour.
 - Startup takes a couple of seconds: a one-file build unpacks itself to a
   temporary folder first. For an instant start, replace `EXE(...)` with the
@@ -114,9 +131,11 @@ to report progress, and `cancel` — a `threading.Event` that aborts the loop
 config.ini                serial port + retry settings
 assets/                   logo.svg, logo.jpeg, logo.ico
 paths.py                  project root / bundle directory (PyInstaller aware)
-app.py                    entry point: QApplication + MainWindow
+app.py                    entry point, command logic, frame routing
+calc.py                   forces and centre of pressure (ТЗ section 6)
 device/
   settings.py             config schema: dataclasses, defaults, load/save
+  protocol.py             frame layouts, CRC, stream framing (ТЗ 2 and 7)
   serial_link.py          serial connection with retry/backoff (no Qt)
   connection.py           Qt controller: connects on a worker thread
   __main__.py             connection check CLI
@@ -128,6 +147,7 @@ widgets/
   workspace.py            empty state + calibration view, section heading
   pad_card.py             pad channel map (ch0–ch6) with its forces and cop columns
   cop_plot.py             centre-of-pressure mini plot (custom painted)
+tests/                    the ТЗ as an executable specification
 ```
 
 The modules are top-level, so **run everything from the project root** — that is
@@ -141,12 +161,10 @@ modules would have to move back under a package folder.
   are not installed, `theme.family()` falls back to the closest system faces
   (Segoe UI / Cascadia Mono), so the layout holds either way. Installing the
   three families gives an exact match.
-- **Views.** The design has two content states — an empty prompt and the pad
-  view — held in a `QStackedWidget`. The pad view is shown by default so the
-  full design is visible; switching is a one-line change once logic exists.
-- **Variants.** `PadRow` already accepts the double-platform options from the
-  design (`show_forces` for the per-pad Fx/Fy/Fz column, `cop="total"` for the
-  taller total-cop plot), and `ChannelBlock` can hide the calibration row for the
-  GF-only view.
+- **Views.** Two content states — the prompt for a platform ID and the pad view
+  — held in a `QStackedWidget`. The prompt is what shows until an ID is entered.
+- **Variants.** `PadRow` carries the double-platform options from the design
+  (`show_forces` for the per-pad Fx/Fy/Fz column, `cop="total"` for the taller
+  total-cop plot), and `ChannelBlock` hides the calibration row in the GF view.
 - **Letter spacing** is applied through `QFont.setLetterSpacing`, since Qt style
   sheets have no `letter-spacing` property.

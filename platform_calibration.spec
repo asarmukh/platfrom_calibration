@@ -51,7 +51,7 @@ exe = EXE(
     upx=False,
     runtime_tmpdir=None,
     # console=True prints the connection log; flip it when debugging a port.
-    console=False,
+    console=True,
     disable_windowed_traceback=False,
     icon="assets/logo.ico",
 )

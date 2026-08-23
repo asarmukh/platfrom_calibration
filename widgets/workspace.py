@@ -83,6 +83,8 @@ class PadView(QWidget):
         ]
         # (pad, channel) -> what the CAL factor field shows, steppers included.
         self._shown_factors: dict[tuple[int, int], int] = {}
+        # pad -> channel -> last scaled reading, kept for the section 6 sums.
+        self._readings: dict[int, dict[int, float]] = {}
         self.pads: list[PadRow] = []
 
         column = QVBoxLayout(self)
@@ -142,6 +144,10 @@ class PadView(QWidget):
             item = self.pad_area.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # deleteLater alone leaves the old row parented and painting
+                # until the event loop next spins, which shows through the
+                # replacement. Unparenting takes it off screen now.
+                widget.setParent(None)
                 widget.deleteLater()
 
         calibrating = self._view == CAL
@@ -175,11 +181,11 @@ class PadView(QWidget):
         self._apply_stepper_state()  # the rows were just recreated
         self._apply_factors()
 
-    def set_factors(self, pad_id: int, values: dict[int, int]) -> None:
-        """Store and show what a pad reported, by channel number.
+    def set_factory_gf(self, pad_id: int, values: dict[int, int]) -> None:
+        """Show what a pad reported for CMD_PADS_GET_FACTORY_GF.
 
-        The same answer feeds both sections: the GF fields and, kept apart from
-        them, the calibration baseline the CAL readings are scaled against.
+        Factory GF is for the operator to check and nothing else (ТЗ 4): it
+        must not touch the calibration baseline the readings are scaled by.
         """
         for channel, value in values.items():
             self._factors[(pad_id, channel)] = value
@@ -187,6 +193,13 @@ class PadView(QWidget):
             if editor is not None:  # only the GF view shows them
                 editor.set_value(value)
 
+    def set_calibration_factors(self, pad_id: int, values: dict[int, int]) -> None:
+        """Take in what a pad reported for CMD_PADS_GET_CF (ТЗ 5.2).
+
+        This is the one thing that moves the baseline: it fills cf_single /
+        cf_double and puts the same numbers in the CAL fields.
+        """
+        for channel, value in values.items():
             if 0 <= channel < CHANNELS:
                 if self._pad_count > 1:
                     self.calibration_factor_double[pad_id - 1][channel] = value
@@ -205,15 +218,53 @@ class PadView(QWidget):
             return self.calibration_factor_double[pad_id - 1][channel]
         return self.calibration_factor_single[channel]
 
-    def set_reading(self, pad_id: int, channel: int, reading: float) -> None:
-        """Scale one channel's reading by its factors and show it."""
-        block = self.channel_block(pad_id, channel)
-        if block is None:
-            return  # not in the CAL view, nothing to show it in
-        base = self.calibration_factor(pad_id, channel)
-        # A channel the device does not use reports a zero factor.
-        value = reading * block.factor / (base * 100) if base else 0.0
-        block.show_reading(value)
+    def set_readings(self, pad_id: int, raw: list[int]) -> dict[int, float]:
+        """Scale a pad's frame of readings (ТЗ 5.3), show them, and hand them back.
+
+            shown = raw * current calibration factor / (cf_base[ch] * 100)
+
+        The scaled values are what the section 6 forces are computed from, so
+        they are returned whether or not this view can display them.
+        """
+        scaled: dict[int, float] = {}
+        for channel, reading in enumerate(raw):
+            block = self.channel_block(pad_id, channel)
+            base = self.calibration_factor(pad_id, channel)
+            # The shown factor is what the steppers move; the base is what the
+            # device last reported. A channel the device does not use reads 0.
+            factor = block.factor if block is not None else base
+            value = reading * factor / (base * 100) if base else 0.0
+            scaled[channel] = value
+            if block is not None:
+                block.show_reading(value)
+        self._readings[pad_id] = scaled
+        return scaled
+
+    def readings(self, pad_id: int) -> dict[int, float]:
+        """The last scaled frame from a pad, empty until one arrives."""
+        return self._readings.get(pad_id, {})
+
+    def set_forces(self, pad_id: int, forces) -> None:
+        """Show one pad's own Fx/Fy/Fz, where the layout has a column for them."""
+        index = pad_id - 1
+        if 0 <= index < len(self.pads):
+            self.pads[index].set_forces(*forces)
+
+    def set_cop(self, x: float | None, y: float | None) -> None:
+        """Move the marker on whichever cop plot this layout shows."""
+        for pad in self.pads:
+            if pad.cop is not None:
+                pad.cop.set_point(x, y)
+
+    def clear_readings(self) -> None:
+        """Blank everything a run put on screen."""
+        self._readings.clear()
+        for pad in self.pads:
+            pad.clear_forces()
+            if pad.cop is not None:
+                pad.cop.clear()
+            for block in pad.card.channels.values():
+                block.show_reading(0.0)
 
     def channel_numbers(self, pad_id: int) -> list[int]:
         """The channels a pad actually shows, in order."""
@@ -332,9 +383,13 @@ class Workspace(QScrollArea):
         self.stack.addWidget(Placeholder())  # index EMPTY
         self.pad_view = PadView()
         self.stack.addWidget(self.pad_view)  # index PADS
-        self.stack.setCurrentIndex(PADS)
+        self.stack.setCurrentIndex(EMPTY)  # ТЗ 3: nothing until a platform ID
         inner.addWidget(self.stack)
         self.set_pad_count = self.pad_view.set_pad_count
 
         outer.addWidget(centred, 0, Qt.AlignmentFlag.AlignHCenter)
         self.setWidget(page)
+
+    def show_pads(self, ready: bool) -> None:
+        """Swap between the pad view and the prompt for a platform ID."""
+        self.stack.setCurrentIndex(PADS if ready else EMPTY)

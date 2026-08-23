@@ -198,10 +198,16 @@ def rule(horizontal: bool = True) -> QFrame:
     return line
 
 
+NEUTRAL = -1  # SegmentedControl: nothing picked yet
+
+
 class SegmentedControl(QFrame):
     """Two-button toggle with a single shared outline, as in the design.
 
-    Emits `changed` with the index of the newly selected segment.
+    Emits `changed` with the index of the newly selected segment. Start it at
+    `NEUTRAL` for a control the user must choose from: neither segment is lit,
+    and the first click is a real choice rather than a confirmation of a
+    default nobody made.
     """
 
     changed = Signal(int)
@@ -247,6 +253,11 @@ class SegmentedControl(QFrame):
     @property
     def active(self) -> int:
         return self._active
+
+    @property
+    def chosen(self) -> bool:
+        """False while the control is still waiting for its first choice."""
+        return self._active != NEUTRAL
 
     def set_active(self, index: int) -> None:
         """Select a segment. Emits `changed` only when the selection moves."""

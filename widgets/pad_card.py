@@ -7,11 +7,13 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPainterPath, QP
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
+    QLineEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from . import theme
+from calc import DOUBLE_COP_RANGE, SINGLE_COP_RANGE
 from device.protocol import GF_MAX, GF_MIN
 from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot
@@ -49,6 +51,8 @@ class ChannelBlock(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setMinimumHeight(BLOCK_HEIGHT)
+        # Only the CAL layout has somewhere to put a reading.
+        self.value: QLineEdit | None = None
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -121,7 +125,8 @@ class ChannelBlock(QWidget):
 
     def show_reading(self, value: float) -> None:
         """Show one channel's reading, already scaled by its factors."""
-        self.value.setText(f"{value:.1f}")
+        if self.value is not None:
+            self.value.setText(f"{value:.1f}")
 
     @property
     def factor(self) -> int:
@@ -278,7 +283,7 @@ class PadRow(QWidget):
         column.setContentsMargins(0, 10, 0, 0)
         column.setSpacing(12)
 
-        self.forces: dict[str, object] = {}
+        self.forces: dict[str, QLineEdit] = {}
         if not visible:
             return holder
 
@@ -293,6 +298,16 @@ class PadRow(QWidget):
         column.addStretch(1)
         return holder
 
+    def set_forces(self, fx: float, fy: float, fz: float) -> None:
+        """Show this pad's own forces; a no-op unless the column is visible."""
+        for name, value in (("Fx", fx), ("Fy", fy), ("Fz", fz)):
+            cell = self.forces.get(name)
+            if cell is not None:
+                cell.setText(f"{value:.1f}")
+
+    def clear_forces(self) -> None:
+        self.set_forces(0.0, 0.0, 0.0)
+
     def _cop_column(self, mode: str | None) -> QWidget:
         holder = QWidget()
         holder.setFixedWidth(SIDE_COLUMN)
@@ -300,6 +315,7 @@ class PadRow(QWidget):
         column.setContentsMargins(0, 10, 0, 0)
         column.setSpacing(5)
 
+        self.cop: CopPlot | None = None
         if mode is None:
             return holder
 
@@ -314,9 +330,14 @@ class PadRow(QWidget):
                 align=Qt.AlignmentFlag.AlignCenter,
             )
         )
+        # The plot's extent is the reach of the formula that feeds it: half the
+        # plate for a double platform, the single pad's sensor span otherwise.
+        x_range, y_range = DOUBLE_COP_RANGE if total else SINGLE_COP_RANGE
         self.cop = CopPlot(
             height=141 if total else 68,
             extra_gridlines=total,
+            x_range=x_range,
+            y_range=y_range,
         )
         column.addWidget(self.cop)
         column.addStretch(1)
