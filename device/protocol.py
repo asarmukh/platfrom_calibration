@@ -1,11 +1,12 @@
-"""Frame format of the pad calibration protocol (see "data format.ods").
+"""Frame format of the pad calibration platform protocol (ТЗ section 2).
 
-Every frame is 11 bytes:
+Every command is 11 bytes:
 
     fe ed | platform ID | pad ID | cmd | extra1 | extra2 | CRC_LOW CRC_HIGH | 04 04
 
 The CRC covers the five bytes from platform ID to extra2 and is sent low byte
-first. Qt-free on purpose, like serial_link.py.
+first; an answer's CRC covers everything between its header and the CRC in the
+same way. Qt-free on purpose, like serial_link.py.
 """
 
 from __future__ import annotations
@@ -19,29 +20,30 @@ CMD_PADS_CALIBRATION_START = 0x50
 CMD_PADS_CALIBRATION_STOP = 0x51
 CMD_PADS_GET_FACTORY_GF = 0x52
 CMD_PADS_SAVE_FACTORY_GF = 0x53
+CMD_PADS_GET_CF = 0x54
 CMD_PADS_SAVE_CF = 0x55
 
 # pad ID of a command meant for the whole platform
 NO_PAD = 0
 
-# accepted range of a factory gain factor
+# accepted range of a factory gain factor and of a calibration factor
 GF_MIN = 10
 GF_MAX = 200
 
-# Answers come behind their own header and share one layout:
-#     be ef | platform ID | pad ID | GF[8]       | CRC_LOW CRC_HIGH | 04 04
-#     be ef | platform ID | pad ID | readings[8] | CRC_LOW CRC_HIGH | 04 04
-# They are the same size, so only the run tells them apart: readings arrive
-# between Start and Stop, gain factors the rest of the time. A command that
-# stores something is acknowledged with a shorter frame, which carries no pad:
-#     be ef | platform ID | cmd | 0x06 | CRC_LOW CRC_HIGH | 04 04
+# Answers come behind their own header in one of three lengths (ТЗ 2.1.2):
+#     be ef | platform ID | cmd    | 0x06              | CRC_LOW CRC_HIGH | 04 04
+#     be ef | platform ID | pad ID | uint8_t factor[8] | CRC_LOW CRC_HIGH | 04 04
+#     be ef | platform ID | pad ID | int16_t reading[8]| CRC_LOW CRC_HIGH | 04 04
+# The factor frame answers both GET_FACTORY_GF and GET_CF and carries nothing
+# to tell them apart, so the caller matches it against the request it sent.
 RESPONSE_HEADER = b"\xbe\xef"
-GF_COUNT = 8
-RESPONSE_SIZE = 2 + 2 + GF_COUNT + 2 + 2
+CHANNELS = 8
 ACK = 0x06
 ACK_SIZE = 2 + 2 + 1 + 2 + 2
+FACTOR_SIZE = 2 + 2 + CHANNELS + 2 + 2
+READING_SIZE = 2 + 2 + CHANNELS * 2 + 2 + 2
 # Shortest first: a short frame that checks out cannot be the head of a long one.
-RESPONSE_SIZES = (ACK_SIZE, RESPONSE_SIZE)
+RESPONSE_SIZES = (ACK_SIZE, FACTOR_SIZE, READING_SIZE)
 
 
 class ProtocolError(ValueError):
@@ -97,6 +99,11 @@ def get_factory_gf(platform_id: int, pad_id: int) -> bytes:
     return build_frame(platform_id, pad_id, CMD_PADS_GET_FACTORY_GF)
 
 
+def get_cf(platform_id: int, pad_id: int) -> bytes:
+    """"Read" in the CAL section: ask one pad for its calibration factors."""
+    return build_frame(platform_id, pad_id, CMD_PADS_GET_CF)
+
+
 def write_factory_gf(platform_id: int, pad_id: int) -> bytes:
     """"Write": commit the factory GFs held by the device."""
     return build_frame(platform_id, pad_id, CMD_PADS_SAVE_FACTORY_GF)
@@ -130,17 +137,32 @@ def parse_ack(frame: bytes) -> tuple[int, int]:
     return body[0], body[1]
 
 
-def parse_response(frame: bytes, *, signed: bool = False) -> tuple[int, int, list[int]]:
-    """Split an answer into platform ID, pad ID and its eight values.
+def is_reading(frame: bytes) -> bool:
+    """True for the long frame the platform streams between Start and Stop."""
+    return len(frame) == READING_SIZE
 
-    Gain factors are plain bytes; readings are signed.
+
+def parse_factors(frame: bytes) -> tuple[int, int, list[int]]:
+    """Split a 16-byte answer into platform ID, pad ID and eight factors.
+
+    Answers both GET_FACTORY_GF and GET_CF; the values are plain bytes.
     """
-    body = _response_body(frame, RESPONSE_SIZE)
+    body = _response_body(frame, FACTOR_SIZE)
+    return body[0], body[1], list(body[2:])
+
+
+def parse_readings(frame: bytes) -> tuple[int, int, list[int]]:
+    """Split a 24-byte answer into platform ID, pad ID and eight readings.
+
+    Readings are signed 16-bit, low byte first — the order the frame's own CRC
+    is sent in.
+    """
+    body = _response_body(frame, READING_SIZE)
     values = body[2:]
-    return body[0], body[1], list(
-        int.from_bytes(values[i : i + 1], "little", signed=signed)
-        for i in range(GF_COUNT)
-    )
+    return body[0], body[1], [
+        int.from_bytes(values[i * 2 : i * 2 + 2], "little", signed=True)
+        for i in range(CHANNELS)
+    ]
 
 
 def _response_body(frame: bytes, size: int) -> bytes:
