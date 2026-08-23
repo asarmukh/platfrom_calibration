@@ -98,3 +98,7 @@ coverage/
 # Local reference documents (protocol sheets etc.)
 *.ods
 *.xlsx
+
+# Rendered UI states and extracted spec attachments
+tests/_views/
+docs/_tz_*

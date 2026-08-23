@@ -2,3 +2,7 @@
 
 # Building the Windows executable: pyinstaller platform_calibration.spec
 pyinstaller>=6.0
+
+# Running the suite: pytest
+pytest>=8.0
+pytest-qt>=4.4
