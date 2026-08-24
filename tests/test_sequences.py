@@ -314,7 +314,7 @@ def test_stopping_clears_what_the_run_showed(identified, device, qtbot):
 
     identified.sidebar.start_button.click()
     assert identified.sidebar.totals["Fz"].text() == "0.0"
-    assert identified.sidebar.totals["xcop"].text() == "—"
+    assert identified.sidebar.totals["xcop"].text() == "0.00"
 
 
 def test_readings_without_a_run_provoke_a_stop(identified, device):

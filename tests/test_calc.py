@@ -68,10 +68,29 @@ def test_single_cop_follows_the_formula_verbatim():
     assert totals.ycop == pytest.approx(7 * (8 + 4 - 2 - 6) / fz)
 
 
-def test_no_load_leaves_the_centre_of_pressure_undefined():
+def test_an_unloaded_platform_reports_dead_centre():
     totals = calc.single_totals(EMPTY)
     assert totals.fz == 0
-    assert totals.xcop is None and totals.ycop is None
+    assert totals.xcop == 0.0 and totals.ycop == 0.0
+
+
+def test_a_load_under_the_threshold_reports_dead_centre():
+    """Below COP_MIN_LOAD the ratio is all noise, so it is not reported."""
+    totals = calc.single_totals(pad(ch1=2.9))
+    assert totals.fz == pytest.approx(2.9)
+    assert totals.xcop == 0.0 and totals.ycop == 0.0
+
+
+def test_a_load_on_the_threshold_is_reported():
+    totals = calc.single_totals(pad(ch1=calc.COP_MIN_LOAD))
+    assert totals.xcop == pytest.approx(10.0)
+    assert totals.ycop == pytest.approx(7.0)
+
+
+def test_a_negative_load_reports_dead_centre():
+    """Drift on an empty platform must not come out as a position."""
+    totals = calc.single_totals(pad(ch1=-50))
+    assert totals.xcop == 0.0 and totals.ycop == 0.0
 
 
 # --- double platform --------------------------------------------------------
@@ -128,9 +147,11 @@ def test_double_ycop_divides_by_the_total_load():
     assert totals.ycop == pytest.approx(-14.0)
 
 
-def test_double_with_no_load_leaves_the_cop_undefined():
-    totals = calc.double_totals(EMPTY, EMPTY)
-    assert totals.xcop is None and totals.ycop is None
+def test_double_under_the_threshold_reports_dead_centre():
+    """The threshold is on the combined load, which is the divisor."""
+    totals = calc.double_totals(pad(ch1=1.0), pad(ch4=1.0))
+    assert totals.fz == pytest.approx(2.0)
+    assert totals.xcop == 0.0 and totals.ycop == 0.0
 
 
 def test_cop_stays_inside_the_plot_range():

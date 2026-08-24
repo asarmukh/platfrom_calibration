@@ -20,6 +20,11 @@ from typing import Mapping, NamedTuple
 SINGLE_COP_RANGE = (10.0, 7.0)
 DOUBLE_COP_RANGE = (10.0, 28.0)
 
+# Below this vertical load the centre of pressure is reported as 0, 0. It is a
+# ratio over Fz, so near zero the noise on four load cells swings it across the
+# whole plate; an empty platform would otherwise look like a moving target.
+COP_MIN_LOAD = 3.0  # kg
+
 
 class Forces(NamedTuple):
     """One pad's three forces."""
@@ -32,15 +37,15 @@ class Forces(NamedTuple):
 class Totals(NamedTuple):
     """What the sidebar's TOTAL block shows.
 
-    ``xcop``/``ycop`` are None when there is no load to speak of: they are a
-    ratio over Fz, so a zero Fz leaves the centre of pressure undefined.
+    ``xcop``/``ycop`` fall back to 0.0 under ``COP_MIN_LOAD``: with nothing on
+    the platform there is no centre of pressure to report.
     """
 
     fx: float
     fy: float
     fz: float
-    xcop: float | None
-    ycop: float | None
+    xcop: float
+    ycop: float
 
 
 Readings = Mapping[int, float]
@@ -101,6 +106,10 @@ def double_totals(pad1: Readings, pad2: Readings) -> Totals:
     )
 
 
-def _over(numerator: float, fz: float) -> float | None:
-    """Divide by Fz, or give up when there is no load on the platform."""
-    return numerator / fz if fz else None
+def _over(numerator: float, fz: float) -> float:
+    """Divide by Fz, or report dead centre when the platform is unloaded.
+
+    A load below the threshold — including a negative one, which is drift on an
+    empty platform rather than a real reading — is not worth a position.
+    """
+    return numerator / fz if fz >= COP_MIN_LOAD else 0.0

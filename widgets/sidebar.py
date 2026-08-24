@@ -123,14 +123,13 @@ class SidebarPanel(QFrame):
         for name, value in (("Fx", totals.fx), ("Fy", totals.fy), ("Fz", totals.fz)):
             self.totals[name].setText(f"{value:.1f}")
         for name, value in (("xcop", totals.xcop), ("ycop", totals.ycop)):
-            # No load means no centre of pressure, rather than a misleading 0.
-            self.totals[name].setText("—" if value is None else f"{value:.2f}")
+            self.totals[name].setText(f"{value:.2f}")
 
     def clear_totals(self) -> None:
         for name in ("Fx", "Fy", "Fz"):
             self.totals[name].setText("0.0")
         for name in ("xcop", "ycop"):
-            self.totals[name].setText("—")
+            self.totals[name].setText("0.00")
 
 
 class Sidebar(QScrollArea):
