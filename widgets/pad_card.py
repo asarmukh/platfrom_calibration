@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import theme
-from calc import DOUBLE_COP_RANGE, SINGLE_COP_RANGE
+from calc import DOUBLE_PLATE, DOUBLE_SENSORS, SINGLE_PLATE, SINGLE_SENSORS
 from device.protocol import GF_MAX, GF_MIN
 from .common import NumericField, field, label, mono, readout, stepper_button
 from .cop_plot import CopPlot
@@ -24,7 +24,9 @@ CAL_MAX = 200
 CAL_DEFAULT = CAL_MIN
 
 CORNER_MARK = 20  # orientation triangle in the card's top-left corner
-SIDE_COLUMN = 108  # forces column and cop column width
+SIDE_COLUMN = 108  # forces column width
+COP_COLUMN = 180  # wide enough for the load cells to carry a readable label
+
 FIELD_WIDTH = 96
 FIELD_MIN_WIDTH = 62  # keeps the value readable when the card is squeezed
 FIELD_HEIGHT = 24
@@ -310,7 +312,7 @@ class PadRow(QWidget):
 
     def _cop_column(self, mode: str | None) -> QWidget:
         holder = QWidget()
-        holder.setFixedWidth(SIDE_COLUMN)
+        holder.setFixedWidth(COP_COLUMN)
         column = QVBoxLayout(holder)
         column.setContentsMargins(0, 10, 0, 0)
         column.setSpacing(5)
@@ -330,14 +332,13 @@ class PadRow(QWidget):
                 align=Qt.AlignmentFlag.AlignCenter,
             )
         )
-        # The plot's extent is the reach of the formula that feeds it: half the
-        # plate for a double platform, the single pad's sensor span otherwise.
-        x_range, y_range = DOUBLE_COP_RANGE if total else SINGLE_COP_RANGE
+        # The plot is the plate itself, drawn to scale with its load cells on
+        # it, so the marker can be read against the hardware.
         self.cop = CopPlot(
-            height=141 if total else 68,
-            extra_gridlines=total,
-            x_range=x_range,
-            y_range=y_range,
+            plate=DOUBLE_PLATE if total else SINGLE_PLATE,
+            sensors=DOUBLE_SENSORS if total else SINGLE_SENSORS,
+            width=COP_COLUMN,
+            pads=2 if total else 1,
         )
         column.addWidget(self.cop)
         column.addStretch(1)

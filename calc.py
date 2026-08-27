@@ -16,9 +16,41 @@ from __future__ import annotations
 
 from typing import Mapping, NamedTuple
 
-# Half the extent of the cop plots, in cm: the range each formula can produce.
-SINGLE_COP_RANGE = (10.0, 7.0)
-DOUBLE_COP_RANGE = (10.0, 28.0)
+# --- ТЗ section 1: plate geometry, in centimetres from the platform centre ---
+
+# Plate size. A single platform is one 40x28 pad; a double one stacks two of
+# them, pad 1 above the x axis and pad 2 below it.
+SINGLE_PLATE = (40.0, 28.0)
+DOUBLE_PLATE = (40.0, 56.0)
+
+# Fz-sensor positions. Only the four Fz cells appear on the cop plot: ch0 and
+# ch6 measure shear, not a share of the load, so they have no bearing on where
+# the centre of pressure is.
+SINGLE_SENSORS = {
+    "ch2": (-10.0, 7.0),
+    "ch1": (10.0, 7.0),
+    "ch4": (-10.0, -7.0),
+    "ch5": (10.0, -7.0),
+}
+DOUBLE_SENSORS = {
+    # pad 1, offset +14 from the platform centre
+    "ch2": (-10.0, 21.0),
+    "ch1": (10.0, 21.0),
+    "ch4": (-10.0, 7.0),
+    "ch5": (10.0, 7.0),
+    # pad 2, offset -14; the labels repeat, as they do in the ТЗ figure
+    "ch2#2": (-10.0, -7.0),
+    "ch1#2": (10.0, -7.0),
+    "ch4#2": (-10.0, -21.0),
+    "ch5#2": (10.0, -21.0),
+}
+
+# How far the cop formulas can actually reach: the centre of pressure is the
+# weighted centroid of the Fz sensors, so it never leaves the rectangle they
+# form. A load sitting on one cell reports that cell's position, which is why
+# the marker stops at a load cell and not at the edge of the plate.
+SINGLE_COP_REACH = (10.0, 7.0)
+DOUBLE_COP_REACH = (10.0, 21.0)
 
 # Below this vertical load the centre of pressure is reported as 0, 0. It is a
 # ratio over Fz, so near zero the noise on four load cells swings it across the

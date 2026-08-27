@@ -154,8 +154,41 @@ def test_double_under_the_threshold_reports_dead_centre():
     assert totals.xcop == 0.0 and totals.ycop == 0.0
 
 
-def test_cop_stays_inside_the_plot_range():
+def test_cop_never_leaves_the_sensor_rectangle():
+    """The cop is the sensors' weighted centroid, so it cannot escape them.
+
+    Which is why the marker reaches a load cell, not the plate corner: the
+    reach is half the plate in each direction.
+    """
     for load in ({1: 40.0}, {2: 40.0}, {4: 40.0}, {5: 40.0}):
-        totals = calc.double_totals({**EMPTY, **load}, EMPTY)
-        assert abs(totals.xcop) <= calc.DOUBLE_COP_RANGE[0]
-        assert abs(totals.ycop) <= calc.DOUBLE_COP_RANGE[1]
+        for pads in (({**EMPTY, **load}, EMPTY), (EMPTY, {**EMPTY, **load})):
+            totals = calc.double_totals(*pads)
+            assert abs(totals.xcop) <= calc.DOUBLE_COP_REACH[0]
+            assert abs(totals.ycop) <= calc.DOUBLE_COP_REACH[1]
+
+
+@pytest.mark.parametrize(
+    "reach, sensors",
+    [
+        (calc.SINGLE_COP_REACH, calc.SINGLE_SENSORS),
+        (calc.DOUBLE_COP_REACH, calc.DOUBLE_SENSORS),
+    ],
+)
+def test_the_reach_is_the_outermost_sensor(reach, sensors):
+    """The formulas' limit is where the outermost load cells sit, nothing else.
+
+    Not half the plate: a double platform's outer cells are at y = 21 while its
+    plate edge is at 28, so the marker stops short of the edge by design.
+    """
+    assert reach == (
+        max(abs(x) for x, _ in sensors.values()),
+        max(abs(y) for _, y in sensors.values()),
+    )
+
+
+def test_a_load_on_one_cell_reports_that_cell_position():
+    """Full deflection puts the marker on the load cell that is carrying."""
+    for label, (x, y) in calc.SINGLE_SENSORS.items():
+        channel = int(label.removeprefix("ch"))
+        totals = calc.single_totals(pad(**{label: 40}))
+        assert (totals.xcop, totals.ycop) == pytest.approx((x, y)), channel

@@ -20,7 +20,7 @@ import app as app_module  # noqa: E402
 from conftest import FakeConnection  # noqa: E402
 from device.connection import CONNECTED  # noqa: E402
 from device.settings import AppConfig  # noqa: E402
-from widgets.workspace import CAL  # noqa: E402
+from widgets.workspace import CAL, GF  # noqa: E402
 
 
 def shot(window, name: str) -> None:
@@ -48,6 +48,18 @@ def main() -> None:
 
     window.sidebar.platform_id.setText("1")
     shot(window, "3_single_gf")
+
+    window.workspace.pad_view.set_view(CAL)
+    window.sidebar.read_button.click()
+    device.factors(1, 1, [100] * 8)
+    window.sidebar.start_button.click()
+    # Load parked over ch1: the marker should land on that cell.
+    device.readings(1, 1, [50, 4000, 0, 0, 0, 0, -30, 0])
+    QApplication.processEvents()
+    window._render_readings()
+    shot(window, "3b_single_running")
+    window.sidebar.start_button.click()
+    window.workspace.pad_view.set_view(GF)
 
     window.sidebar.platform_type.set_active(1)  # DOUBLE
     window.workspace.pad_view.set_view(CAL)
